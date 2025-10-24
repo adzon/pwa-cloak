@@ -81,6 +81,11 @@ class AwsRoute53Service
         }
     }
 
+    /**
+     * @param string $domain
+     * @param string $expectedNs
+     * @return bool
+     */
     public function resolveNsRecord(string $domain, string $expectedNs): bool
     {
         try {

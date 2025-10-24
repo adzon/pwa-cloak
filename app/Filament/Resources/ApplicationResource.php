@@ -606,7 +606,7 @@ class ApplicationResource extends Resource
                     ->form([
                         Forms\Components\Toggle::make('is_delete')
                             ->label('显示全部(含隐藏)')
-                            ->inlineLabel()
+                            ->inline()
                             ->default(false),
                     ])
                     ->query(function (Builder $query, array $data): Builder {

@@ -8,6 +8,7 @@ use App\Services\AwsRoute53Service;
 use Filament\Forms;
 use Filament\Forms\Components\Actions;
 use Filament\Forms\Components\Section;
+use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\View;
 use Filament\Forms\Components\Wizard;
 use Filament\Forms\Components\Wizard\Step;
@@ -42,7 +43,7 @@ class DomainResource extends Resource
                     // 第一步：输入域名
                     Step::make('输入域名')
                         ->schema([
-                            Forms\Components\TextInput::make('domain')
+                            TextInput::make('domain')
                                 ->label('域名')
                                 ->placeholder('例如:example.com')
                                 ->helperText('请输入需要配置的域名(不带协议)，建议输入二级域名')
@@ -329,6 +330,12 @@ class DomainResource extends Resource
         ];
     }
 
+    /**
+     * @param callable $get
+     * @param callable $set
+     * @param $record
+     * @return void
+     */
     public static function checkNsRecords(callable $get, callable $set, $record = null): void
     {
         $domain = $get('domain');
