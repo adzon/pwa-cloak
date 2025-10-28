@@ -76,7 +76,7 @@ class DomainResource extends Resource
                             if (!str_starts_with(strtolower($domain), 'www.')) {
                                 $domain = 'www.' . $domain;
                             }
-                            
+
                             // 1. 检查域名唯一性
                             if (Domain::where('domain', $domain)->exists()) {
                                 Notification::make()
@@ -86,7 +86,7 @@ class DomainResource extends Resource
                                     ->send();
                                 throw new Halt();
                             }
-                            
+
                             // 2. 创建 Hosted Zone
                             $service = app(AwsRoute53Service::class);
                             $response = $service->createHostedZone($domain);
@@ -180,7 +180,7 @@ class DomainResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
-            ->modifyQueryUsing(fn (Builder $query) => $query->whereNull('pid'))
+            ->modifyQueryUsing(fn(Builder $query) => $query->whereNull('pid'))
             ->columns([
                 // 域名（支持展开查看子域名）
                 TextColumn::make('domain')
@@ -194,7 +194,6 @@ class DomainResource extends Resource
                         }
                         return null;
                     })
-                    ->searchable()
                     ->weight('medium')
                     ->size(TextColumn\TextColumnSize::Medium),
 
@@ -221,7 +220,6 @@ class DomainResource extends Resource
                     ->label('创建时间')
                     ->dateTime('Y-m-d H:i:s')
                     ->sortable()
-                    ->toggleable()
                     ->size(TextColumn\TextColumnSize::Small),
             ])
             ->filters([
@@ -337,7 +335,7 @@ class DomainResource extends Resource
                     ->color('info')
                     ->tooltip(fn($record) => "查看 {$record->children()->count()} 个子域名")
                     ->visible(fn($record) => $record->children()->count() > 0)
-                    ->modalContent(fn (Domain $record) => view('filament.domain.subdomains-list', [
+                    ->modalContent(fn(Domain $record) => view('filament.domain.subdomains-list', [
                         'subdomains' => $record->children
                     ]))
                     ->modalHeading(fn($record) => $record->domain . ' 的子域名')
@@ -357,12 +355,11 @@ class DomainResource extends Resource
                         if (str_starts_with(strtolower($baseDomain), 'www.')) {
                             $baseDomain = substr($baseDomain, 4);
                         }
-                        
+
                         return [
                             TagsInput::make('subdomains')
                                 ->label('请输入子域名前缀')
                                 ->placeholder('输入子域名前缀后按 Enter 或 Tab 添加')
-                                ->helperText("例如输入 api，将生成：api.{$baseDomain}")
                                 ->splitKeys(['Enter', 'Tab', ','])
                                 ->required()
                                 ->rules([
@@ -386,7 +383,7 @@ class DomainResource extends Resource
                         $subdomains = $data['subdomains'] ?? [];
                         $created = 0;
                         $errors = [];
-                        
+
                         // 获取父域名的二级域名（去掉 www. 前缀）
                         $baseDomain = $record->domain;
                         if (str_starts_with(strtolower($baseDomain), 'www.')) {
@@ -448,6 +445,10 @@ class DomainResource extends Resource
                     ->label(fn($record) => $record->is_delete ? '显示' : '隐藏')
                     ->icon(fn($record) => $record->is_delete ? 'heroicon-o-eye' : 'heroicon-o-eye-slash')
                     ->color(fn($record) => $record->is_delete ? 'success' : 'warning')
+                    ->requiresConfirmation(fn($record) => !$record->is_delete) // 仅隐藏时需要确认
+                    ->modalHeading(fn($record) => $record->is_delete ? '' : '确认隐藏该APP？')
+                    ->modalDescription(fn($record) => $record->is_delete ? '' : '注意！隐藏后的APP将无法新建推广链接，但是不影响已创建的推广链接正常使用。')
+                    ->modalSubmitActionLabel(fn($record) => $record->is_delete ? '' : '隐藏')
                     ->action(function ($record) {
                         $record->is_delete = !$record->is_delete;
                         $record->save();
@@ -456,11 +457,7 @@ class DomainResource extends Resource
                             ->body($record->is_delete ? '项目已隐藏' : '项目已显示')
                             ->success()
                             ->send();
-                    })
-                    ->requiresConfirmation()
-                    ->modalHeading(fn($record) => $record->is_delete ? '确认显示该域名？' : '确认隐藏该域名？')
-                    ->modalDescription('注意！隐藏后的域名将无法新建推广链接，但是不影响已创建的推广链接正常使用。')
-                    ->modalSubmitActionLabel(fn($record) => $record->is_delete ? '显示' : '隐藏'),
+                    }),
             ])
             ->defaultSort('created_at', 'desc')
             ->striped()
