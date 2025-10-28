@@ -35,28 +35,36 @@ class EditApplication extends EditRecord
                 $localeApp = $record->localeApplications()->updateOrCreate(
                     ['language_id' => $languageId],
                     [
-                        'name'          => $localeData['name'] ?? '',
-                        'manufacturer'  => $localeData['manufacturer'] ?? '',
-                        'icon'          => $localeData['icon'] ?? '',
-                        'downloads'     => $localeData['downloads'] ?? '',
-                        'age_limit'     => $localeData['age_limit'] ?? 0,
+                        'name' => $localeData['name'] ?? '',
+                        'manufacturer' => $localeData['manufacturer'] ?? '',
+                        'icon' => $localeData['icon'] ?? '',
+                        'downloads' => $localeData['downloads'] ?? '',
+                        'age_limit' => $localeData['age_limit'] ?? 0,
                         'comment_count' => $localeData['comment_count'] ?? 0,
-                        'introduction'  => $localeData['introduction'] ?? '',
-                        'images'        => isset($localeData['images']) ? json_encode($localeData['images']) : null,
-                        'label'         => $localeData['label'] ?? [],
+                        'introduction' => $localeData['introduction'] ?? '',
+                        'images' => isset($localeData['images']) ? json_encode($localeData['images']) : null,
+                        'label' => $localeData['label'] ?? [],
                     ]
                 );
 
-                // 保存评论
-                if (!empty($localeData['comments'])) {
-                    foreach ($localeData['comments'] as $comment) {
-                        $newComment = \App\Models\Comment::create([
-                            'user_id' => Auth::id(),
-                            'language_id' => $comment['language_id'] ?? $languageId,
-                            'nickname' => $comment['nickname'],
-                            'content' => $comment['content'],
-                        ]);
-                        $localeApp->comments()->attach($newComment->id);
+                if (!empty($localeData['reviews'])) {
+                    // 先清除旧的评论关联（避免重复）
+                    $localeApp->comments()->detach();
+
+                    foreach ($localeData['reviews'] as $review) {
+                        // 如果评论已经有 ID，说明是已存在的评论，直接关联
+                        if (isset($review['id']) && $review['id']) {
+                            $localeApp->comments()->attach($review['id']);
+                        } else {
+                            // 新评论，创建后关联
+                            $newComment = \App\Models\Comment::create([
+                                'user_id' => Auth::id(),
+                                'language_id' => $review['language_id'] ?? $languageId,
+                                'nickname' => $review['nickname'] ?? '匿名用户',
+                                'content' => $review['content'] ?? '',
+                            ]);
+                            $localeApp->comments()->attach($newComment->id);
+                        }
                     }
                 }
             }
