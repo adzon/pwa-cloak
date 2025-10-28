@@ -4,7 +4,6 @@ namespace App\Filament\Resources\ApplicationResource\Pages;
 
 use App\Filament\Resources\ApplicationResource;
 use App\Models\Application;
-use App\Models\LocaleApplication;
 use App\Models\Comment;
 use Illuminate\Support\Facades\Auth;
 use Filament\Resources\Pages\CreateRecord;
@@ -31,8 +30,12 @@ class CreateApplication extends CreateRecord
         // 保存每种语言的详情
         if (!empty($data['localeApplications'])) {
             foreach ($data['localeApplications'] as $languageId => $localeData) {
+                $images = isset($localeData['images'])
+                    ? (is_array($localeData['images'])
+                        ? json_encode($localeData['images'])
+                        : $localeData['images'])
+                    : null;
 
-                // 创建 LocaleApplication
                 $localeApp = $application->localeApplications()->create([
                     'language_id'   => $languageId,
                     'name'          => $localeData['name'] ?? '',
@@ -40,12 +43,13 @@ class CreateApplication extends CreateRecord
                     'icon'          => $localeData['icon'] ?? '',
                     'downloads'     => $localeData['downloads'] ?? '',
                     'age_limit'     => $localeData['age_limit'] ?? 0,
-                    'comment_count'      => $localeData['comment_count'] ?? 0,
+                    'comment_count' => $localeData['comment_count'] ?? 0,
                     'introduction'  => $localeData['introduction'] ?? '',
-                    'images'        => isset($localeData['images']) ? json_encode($localeData['images']) : null,
-                    'label'         => $localeData['label'] ?? '',
+                    'images'        => $images,
+                    'label'         => $localeData['label'] ?? [],
                 ]);
 
+                // 保存评论
                 if (!empty($localeData['reviews'])) {
                     foreach ($localeData['reviews'] as $review) {
                         $comment = Comment::create([
@@ -54,8 +58,6 @@ class CreateApplication extends CreateRecord
                             'nickname'    => $review['nickname'] ?? '匿名用户',
                             'content'     => $review['content'] ?? '',
                         ]);
-
-                        // 与当前 localeApplication 关联
                         $localeApp->comments()->attach($comment->id);
                     }
                 }

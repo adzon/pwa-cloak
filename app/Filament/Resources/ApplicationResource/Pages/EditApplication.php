@@ -20,30 +20,32 @@ class EditApplication extends EditRecord
             ->send();
     }
 
-    protected function handleRecordCreation(array $data): Application
+    protected function handleRecordUpdate($record, array $data): Application
     {
-        $application = Application::create($data);
+        $record->update($data);
 
         // 保存语言关系
-        if (!empty($data['languages'])) {
-            $application->languages()->sync($data['languages']);
+        if (isset($data['languages'])) {
+            $record->languages()->sync($data['languages']);
         }
 
         // 保存多语言本地化数据
         if (!empty($data['localeApplications'])) {
             foreach ($data['localeApplications'] as $languageId => $localeData) {
-                $application->localeApplications()->create([
-                    'language_id' => $languageId,
-                    'name' => $localeData['name'] ?? '',
-                    'manufacturer' => $localeData['manufacturer'] ?? '',
-                    'icon' => $localeData['icon'] ?? '',
-                    'downloads' => $localeData['downloads'] ?? '',
-                    'age_limit' => $localeData['age_limit'] ?? 0,
-                    'comment_count' => $localeData['comment_count'] ?? 0,
-                    'introduction' => $localeData['introduction'] ?? '',
-                    'images' => isset($localeData['images']) ? json_encode($localeData['images']) : null,
-                    'label' => $localeData['label'] ?? '',
-                ]);
+                $localeApp = $record->localeApplications()->updateOrCreate(
+                    ['language_id' => $languageId],
+                    [
+                        'name'          => $localeData['name'] ?? '',
+                        'manufacturer'  => $localeData['manufacturer'] ?? '',
+                        'icon'          => $localeData['icon'] ?? '',
+                        'downloads'     => $localeData['downloads'] ?? '',
+                        'age_limit'     => $localeData['age_limit'] ?? 0,
+                        'comment_count' => $localeData['comment_count'] ?? 0,
+                        'introduction'  => $localeData['introduction'] ?? '',
+                        'images'        => isset($localeData['images']) ? json_encode($localeData['images']) : null,
+                        'label'         => $localeData['label'] ?? [],
+                    ]
+                );
 
                 // 保存评论
                 if (!empty($localeData['comments'])) {
@@ -54,21 +56,19 @@ class EditApplication extends EditRecord
                             'nickname' => $comment['nickname'],
                             'content' => $comment['content'],
                         ]);
-                        $application->comments()->attach($newComment->id);
+                        $localeApp->comments()->attach($newComment->id);
                     }
                 }
             }
         }
 
-        return $application;
+        return $record;
     }
 
     protected function mutateFormDataBeforeFill(array $data): array
     {
-        \Log::debug('mutateFormDataBeforeFill called with data:', $data);
         if (isset($data['id'])) {
             $record = Application::with(['languages', 'localeApplications.comments'])->find($data['id']);
-            \Log::debug($record);
             if ($record) {
                 // 设置语言选择
                 $data['languages'] = $record->languages->pluck('id')->toArray();
@@ -81,21 +81,17 @@ class EditApplication extends EditRecord
                     // 处理图片数据
                     $images = [];
                     if ($localeApp->images) {
-                        $images = is_string($localeApp->images) ?
-                            json_decode($localeApp->images, true) :
-                            $localeApp->images;
-
-                        // 确保是索引数组而不是关联数组
+                        $images = is_string($localeApp->images)
+                            ? json_decode($localeApp->images, true)
+                            : $localeApp->images;
                         if (is_array($images) && !array_is_list($images)) {
                             $images = array_values($images);
                         }
                     }
 
-
-                    // 处理评论数据（用于 Repeater）
-                    $commentRecords = $localeApp->comments; // 这是 comments 表的数据集合
+                    // 处理评论数据
                     $reviews = [];
-                    foreach ($commentRecords as $comment) {
+                    foreach ($localeApp->comments as $comment) {
                         $reviews[] = [
                             'id' => $comment->id,
                             'nickname' => $comment->nickname,
@@ -104,7 +100,20 @@ class EditApplication extends EditRecord
                         ];
                     }
 
-                    \Log::debug('localeApplications', $reviews);
+                    // 处理标签数据：确保转换为字符串数组格式（兼容旧的对象数组格式）
+                    $labels = [];
+                    if ($localeApp->label && is_array($localeApp->label)) {
+                        foreach ($localeApp->label as $label) {
+                            if (is_array($label) && isset($label['value'])) {
+                                // 旧格式：[{'value': 'movie'}]
+                                $labels[] = $label['value'];
+                            } elseif (is_string($label)) {
+                                // 新格式：['movie']
+                                $labels[] = $label;
+                            }
+                        }
+                    }
+
                     $localeApplications[$languageId] = [
                         'id' => $localeApp->id,
                         'name' => $localeApp->name,
@@ -112,19 +121,18 @@ class EditApplication extends EditRecord
                         'icon' => $localeApp->icon,
                         'downloads' => $localeApp->downloads,
                         'age_limit' => $localeApp->age_limit,
-                        'comment_count' => $localeApp->comment_count, // 这是属性字段
+                        'comment_count' => $localeApp->comment_count,
                         'introduction' => $localeApp->introduction,
+                        'label' => $labels,
                         'images' => $images,
-                        'label' => $localeApp->label ?? '',
-                        'reviews' => $reviews, // 用于 Repeater 组件
+                        'reviews' => $reviews,
                     ];
                 }
 
                 $data['localeApplications'] = $localeApplications;
             }
         }
-        \Log::debug('data', $data);
+
         return $data;
     }
-
 }

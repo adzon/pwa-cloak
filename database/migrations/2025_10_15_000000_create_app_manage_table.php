@@ -47,7 +47,7 @@ return new class extends Migration {
             $table->unsignedBigInteger('comment_count')->nullable()->comment('评论数');
             $table->string('introduction', 1024)->nullable()->comment('简介');
             $table->text('images')->nullable()->comment('详情图片，json');
-            $table->string('label', 1024)->nullable()->comment('标签，逗号分割');
+            $table->text('label')->nullable()->comment('标签');
             $table->timestamps();
             $table->unique(['language_id', 'app_id']);
         });

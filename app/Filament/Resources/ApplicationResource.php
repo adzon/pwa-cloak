@@ -7,8 +7,10 @@ use App\Filament\Resources\ApplicationResource\Pages;
 use App\Filament\Resources\ApplicationResource\RelationManagers;
 use App\Models\Application;
 use App\Models\Language;
+use Arr;
 use Filament\Forms;
 use Filament\Forms\Components\CheckboxList;
+use Filament\Forms\Components\Component;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Radio;
@@ -177,12 +179,31 @@ class ApplicationResource extends Resource
                             ->required()
                             ->reactive()
                             ->columnSpanFull()
-                            ->afterStateUpdated(function (callable $set, $state) {
-                                // 每次选择语言后，重置 localeApplications 数组，强制刷新 Tabs
-                                $set('localeApplications', []);
+                            ->afterStateUpdated(function (callable $set, callable $get, $state) {
+                                // 初始化每个语言的嵌套数据结构
+                                $localeApplications = $get('localeApplications') ?: [];
+                                if (is_array($state)) {
+                                    foreach ($state as $languageId) {
+                                        if (!isset($localeApplications[$languageId])) {
+                                            $localeApplications[$languageId] = [
+                                                'name' => '',
+                                                'manufacturer' => '',
+                                                'icon' => null,
+                                                'downloads' => null,
+                                                'age_limit' => null,
+                                                'comment_count' => null,
+                                                'introduction' => '',
+                                                'images' => [],
+                                                'label' => [],
+                                                'reviews' => [],
+                                            ];
+                                        }
+                                    }
+                                }
+                                $set('localeApplications', $localeApplications);
                             }),
 
-                        Tabs::make('语言详情')
+                        Tabs::make('本地化语言应用信息')
                             ->columnSpanFull()
                             ->tabs(function ($get) {
                                 $languageIds = $get('languages') ?: [];
@@ -289,47 +310,35 @@ class ApplicationResource extends Resource
                                                 ->panelLayout('grid')
                                                 ->columnSpanFull(),
 
-                                            TextInput::make("localeApplications.{$languageId}.label_input")
-                                                ->label('添加标签')
-                                                ->placeholder('输入标签后点击"添加"按钮，如：热门、新品、社交')
-                                                ->prefixIcon('heroicon-o-tag')
-                                                ->suffixActions([
-                                                    Action::make('addLabel')
-                                                        ->label('添加')
-                                                        ->button()
-                                                        ->color('primary')
-                                                        ->action(function (callable $get, callable $set) use ($languageId) {
-                                                            $newLabel = trim($get("localeApplications.{$languageId}.label_input"));
-                                                            $existing = explode(',', $get("localeApplications.{$languageId}.label") ?? '');
-                                                            $existing = array_filter(array_map('trim', $existing));
-
-                                                            if ($newLabel && !in_array($newLabel, $existing)) {
-                                                                $existing[] = $newLabel;
-                                                                $set("localeApplications.{$languageId}.label", implode(',', $existing));
-                                                            }
-
-                                                            // 清空输入框
-                                                            $set("localeApplications.{$languageId}.label_input", '');
-                                                        }),
-                                                    Action::make('clearLabel')
-                                                        ->label('清空')
-                                                        ->color('danger')
-                                                        ->button()
-                                                        ->action(function (callable $set) use ($languageId) {
-                                                            $set("localeApplications.{$languageId}.label", '');
-                                                        }),
-                                                ])
-                                                ->reactive(),
-
                                             TagsInput::make("localeApplications.{$languageId}.label")
-                                                ->label('当前标签列表')
-                                                ->disabled()
-                                                ->placeholder('暂无标签')
-                                                ->separator(',')
-                                                ->splitKeys(['Tab', 'Enter'])
+                                                ->label('添加 APP 标签')
+                                                ->placeholder('输入标签后按 Enter 或 Tab 或逗号添加')
+                                                ->helperText('最多可添加 6 个标签，每个标签不超过 20 字符')
+                                                ->suggestions(['热门', '推荐', '新品', '限时', '免费', '精品', '人气', '畅销'])
+                                                ->splitKeys(['Enter', 'Tab', ','])
+                                                ->required()
+                                                ->rules([
+                                                    'max:6',
+                                                    function () {
+                                                        return function (string $attribute, $value, $fail) {
+                                                            if (is_array($value)) {
+                                                                if (count($value) > 6) {
+                                                                    $fail('最多只能添加 6 个标签');
+                                                                }
+                                                                foreach ($value as $tag) {
+                                                                    if (mb_strlen($tag) > 20) {
+                                                                        $fail('每个标签不能超过 20 个字符');
+                                                                        break;
+                                                                    }
+                                                                }
+                                                            }
+                                                        };
+                                                    }
+                                                ])
                                                 ->columnSpanFull(),
 
-                                            Repeater::make("localeApplications.{$languageId}.reviews")
+
+                                    Repeater::make("localeApplications.{$languageId}.reviews")
                                                 ->label('APP评论库')
                                                 ->schema([
                                                     TextInput::make('nickname')

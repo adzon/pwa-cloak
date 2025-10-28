@@ -31,6 +31,8 @@ class LocaleApplication extends Model
     protected $casts = [
         'age_limit' => 'integer',
         'comment_count' => 'integer',
+        'images' => 'array',
+        'label' => 'array',
     ];
 
     public function application(): BelongsTo
