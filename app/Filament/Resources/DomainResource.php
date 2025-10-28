@@ -9,10 +9,12 @@ use Filament\Forms;
 use Filament\Forms\Components\Actions;
 use Filament\Forms\Components\Section;
 use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\TagsInput;
 use Filament\Forms\Components\View;
 use Filament\Forms\Components\Wizard;
 use Filament\Forms\Components\Wizard\Step;
 use Filament\Forms\Form;
+use Filament\Support\Exceptions\Halt;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables;
@@ -45,19 +47,23 @@ class DomainResource extends Resource
                         ->schema([
                             TextInput::make('domain')
                                 ->label('域名')
-                                ->placeholder('例如:example.com')
-                                ->helperText('请输入需要配置的域名(不带协议)，建议输入二级域名')
+                                ->placeholder('请输入需要配置的域名(不带协议)，建议输入二级域名')
                                 ->required()
                                 ->maxLength(255)
+                                ->lazy()
                                 ->rules([
                                     'regex:/^(?!:\/\/)([a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]\.)+[a-zA-Z]{2,}$/',
-                                    // 使用 Rule 类来定义唯一性验证
-                                    \Illuminate\Validation\Rule::unique('domains', 'domain')
                                 ])
                                 ->validationMessages([
                                     'regex' => '请输入有效的域名格式，不包含协议（如http://或https://）',
-                                    'unique' => '该域名已存在，请选择其他域名或编辑现有域名记录。'
-                                ]),
+                                ])
+                                ->dehydrateStateUsing(function ($state) {
+                                    // 数据提交时自动添加 www 前缀
+                                    if ($state && !str_starts_with(strtolower($state), 'www.')) {
+                                        return 'www.' . $state;
+                                    }
+                                    return $state;
+                                }),
 
                             // 隐藏字段用于保存 AWS Route53 返回的数据
                             Forms\Components\Hidden::make('hosting_id'),
@@ -65,9 +71,25 @@ class DomainResource extends Resource
                         ])
                         ->visible(fn($livewire) => $livewire instanceof \App\Filament\Resources\DomainResource\Pages\CreateDomain)
                         ->afterValidation(function ($state, callable $set, callable $get) {
-                            // 检查是否已存在相同域名且已有 hosting_name_servers
+                            // 获取域名（已通过 dehydrateStateUsing 添加了 www 前缀）
+                            $domain = $state['domain'];
+                            if (!str_starts_with(strtolower($domain), 'www.')) {
+                                $domain = 'www.' . $domain;
+                            }
+                            
+                            // 1. 检查域名唯一性
+                            if (Domain::where('domain', $domain)->exists()) {
+                                Notification::make()
+                                    ->title('域名已存在')
+                                    ->body('该域名已存在，请选择其他域名或编辑现有域名记录。')
+                                    ->danger()
+                                    ->send();
+                                throw new Halt();
+                            }
+                            
+                            // 2. 创建 Hosted Zone
                             $service = app(AwsRoute53Service::class);
-                            $response = $service->createHostedZone($state['domain']);
+                            $response = $service->createHostedZone($domain);
 
                             if (isset($response['code']) && $response['code'] === 0) {
                                 $data = $response['data'] ?? [];
@@ -151,8 +173,6 @@ class DomainResource extends Resource
                             ])->alignment('center'),
                         ]),
                 ])
-                    ->key('domain-wizard')
-                    ->persistStepInQueryString()
                     ->columnSpanFull()
             ]);
     }
@@ -160,32 +180,49 @@ class DomainResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            ->modifyQueryUsing(fn (Builder $query) => $query->whereNull('pid'))
             ->columns([
-                // 域名
+                // 域名（支持展开查看子域名）
                 TextColumn::make('domain')
                     ->label('域名')
                     ->copyable()
-                    ->copyMessage('已复制'),
+                    ->copyMessage('已复制')
+                    ->description(function (Domain $record) {
+                        $childrenCount = $record->children()->count();
+                        if ($childrenCount > 0) {
+                            return "📁 {$childrenCount} 个子域名";
+                        }
+                        return null;
+                    })
+                    ->searchable()
+                    ->weight('medium')
+                    ->size(TextColumn\TextColumnSize::Medium),
 
                 // 解析状态
                 TextColumn::make('status')
                     ->label('解析状态')
                     ->badge()
                     ->formatStateUsing(fn($state) => $state ? '解析成功' : '未解析')
-                    ->color(fn($state) => $state === true ? 'success' : 'warning'),
+                    ->color(fn($state) => $state === true ? 'success' : 'warning')
+                    ->icon(fn($state) => $state === true ? 'heroicon-o-check-circle' : 'heroicon-o-clock')
+                    ->alignCenter(),
 
                 // 使用状态 (基于 promotion_id 判断)
                 TextColumn::make('usage')
                     ->label('使用状态')
                     ->getStateUsing(fn(Domain $record) => $record->checkUsage() ? '已使用' : '未使用')
                     ->badge()
-                    ->color(fn(Domain $record) => $record->checkUsage() ? 'success' : 'gray'),
+                    ->color(fn(Domain $record) => $record->checkUsage() ? 'success' : 'gray')
+                    ->icon(fn(Domain $record) => $record->checkUsage() ? 'heroicon-o-check-badge' : 'heroicon-o-minus-circle')
+                    ->alignCenter(),
 
                 // 创建时间
                 TextColumn::make('created_at')
                     ->label('创建时间')
                     ->dateTime('Y-m-d H:i:s')
-                    ->sortable(),
+                    ->sortable()
+                    ->toggleable()
+                    ->size(TextColumn\TextColumnSize::Small),
             ])
             ->filters([
                 // 创建时间范围筛选
@@ -293,8 +330,120 @@ class DomainResource extends Resource
             ->filtersFormWidth('full')
             ->persistFiltersInSession()
             ->actions([
+                // 查看子域名（优先级最高）
+                Tables\Actions\Action::make('viewSubdomains')
+                    ->label('子域名')
+                    ->icon('heroicon-o-rectangle-stack')
+                    ->color('info')
+                    ->tooltip(fn($record) => "查看 {$record->children()->count()} 个子域名")
+                    ->visible(fn($record) => $record->children()->count() > 0)
+                    ->modalContent(fn (Domain $record) => view('filament.domain.subdomains-list', [
+                        'subdomains' => $record->children
+                    ]))
+                    ->modalHeading(fn($record) => $record->domain . ' 的子域名')
+                    ->modalSubmitAction(false)
+                    ->modalCancelActionLabel('关闭')
+                    ->modalWidth('2xl'),
+
+                // 生成子域名按钮（仅对解析成功且无父域名的域名显示）
+                Tables\Actions\Action::make('generateSubdomain')
+                    ->label('生成子域名')
+                    ->icon('heroicon-o-plus-circle')
+                    ->color('success')
+                    ->visible(fn($record) => $record->status === true && is_null($record->pid))
+                    ->form(function (Domain $record) {
+                        // 获取二级域名用于示例展示
+                        $baseDomain = $record->domain;
+                        if (str_starts_with(strtolower($baseDomain), 'www.')) {
+                            $baseDomain = substr($baseDomain, 4);
+                        }
+                        
+                        return [
+                            TagsInput::make('subdomains')
+                                ->label('请输入子域名前缀')
+                                ->placeholder('输入子域名前缀后按 Enter 或 Tab 添加')
+                                ->helperText("例如输入 api，将生成：api.{$baseDomain}")
+                                ->splitKeys(['Enter', 'Tab', ','])
+                                ->required()
+                                ->rules([
+                                    function () {
+                                        return function (string $attribute, $value, $fail) {
+                                            if (is_array($value)) {
+                                                foreach ($value as $subdomain) {
+                                                    // 验证子域名格式：只允许字母、数字和连字符，不能以连字符开头或结尾
+                                                    if (!preg_match('/^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$/', $subdomain)) {
+                                                        $fail("子域名前缀 '{$subdomain}' 格式无效。只允许字母、数字和连字符，且不能以连字符开头或结尾。");
+                                                        break;
+                                                    }
+                                                }
+                                            }
+                                        };
+                                    }
+                                ])
+                        ];
+                    })
+                    ->action(function (Domain $record, array $data) {
+                        $subdomains = $data['subdomains'] ?? [];
+                        $created = 0;
+                        $errors = [];
+                        
+                        // 获取父域名的二级域名（去掉 www. 前缀）
+                        $baseDomain = $record->domain;
+                        if (str_starts_with(strtolower($baseDomain), 'www.')) {
+                            $baseDomain = substr($baseDomain, 4); // 去掉 "www."
+                        }
+
+                        foreach ($subdomains as $prefix) {
+                            // 子域名 = 前缀 + 二级域名
+                            $fullDomain = $prefix . '.' . $baseDomain;
+
+                            // 检查是否已存在
+                            if (Domain::where('domain', $fullDomain)->exists()) {
+                                $errors[] = "子域名 {$fullDomain} 已存在";
+                                continue;
+                            }
+
+                            // 创建子域名记录
+                            Domain::create([
+                                'user_id' => $record->user_id,
+                                'pid' => $record->id,
+                                'domain' => $fullDomain,
+                                'hosting_id' => $record->hosting_id,
+                                'hosting_name_servers' => $record->hosting_name_servers,
+                                'status' => 0, // 子域名初始化为未解析状态
+                                'promotion_id' => 0,
+                                'is_save' => $record->is_save,
+                                'is_delete' => false,
+                            ]);
+
+                            $created++;
+                        }
+
+                        if ($created > 0) {
+                            Notification::make()
+                                ->title('生成成功')
+                                ->body("成功生成 {$created} 个子域名" . (count($errors) > 0 ? '，' . count($errors) . ' 个失败' : ''))
+                                ->success()
+                                ->send();
+                        }
+
+                        if (count($errors) > 0) {
+                            Notification::make()
+                                ->title('部分失败')
+                                ->body(implode("\n", $errors))
+                                ->warning()
+                                ->send();
+                        }
+                    })
+                    ->modalHeading('生成子域名')
+                    ->modalSubmitActionLabel('生成子域名')
+                    ->modalWidth('md'),
+
                 // 编辑
-                Tables\Actions\EditAction::make(),
+                Tables\Actions\EditAction::make()
+                    ->label('编辑'),
+
+                // 隐藏/显示
                 Tables\Actions\Action::make('toggleVisibility')
                     ->label(fn($record) => $record->is_delete ? '显示' : '隐藏')
                     ->icon(fn($record) => $record->is_delete ? 'heroicon-o-eye' : 'heroicon-o-eye-slash')
@@ -309,11 +458,14 @@ class DomainResource extends Resource
                             ->send();
                     })
                     ->requiresConfirmation()
-                    ->modalHeading(fn($record) => $record->is_delete ? '确认显示该像素？' : '确认隐藏该像素？')
-                    ->modalDescription('注意！隐藏后的像素将无法新建推广链接，但是不影响已创建的推广链接正常使用。')
+                    ->modalHeading(fn($record) => $record->is_delete ? '确认显示该域名？' : '确认隐藏该域名？')
+                    ->modalDescription('注意！隐藏后的域名将无法新建推广链接，但是不影响已创建的推广链接正常使用。')
                     ->modalSubmitActionLabel(fn($record) => $record->is_delete ? '显示' : '隐藏'),
             ])
-            ->recordUrl(null);
+            ->defaultSort('created_at', 'desc')
+            ->striped()
+            ->recordUrl(null)
+            ->paginated([10, 25, 50, 100]);
     }
 
     public static function getRelations(): array

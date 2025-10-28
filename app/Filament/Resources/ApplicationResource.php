@@ -43,7 +43,7 @@ class ApplicationResource extends Resource
 {
     protected static ?string $model = Application::class;
 
-    protected static ?string $navigationIcon = 'heroicon-o-rectangle-stack';
+    protected static ?string $navigationIcon = 'heroicon-o-device-phone-mobile';
     protected static ?string $navigationGroup = '推广';
     protected static ?string $navigationLabel = '应用管理';
     protected static ?int $navigationSort = 1;

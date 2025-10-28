@@ -17,7 +17,7 @@ use Illuminate\Database\Eloquent\Builder;
 class OtherPixelResource extends Resource
 {
     protected static ?string $model = OtherPixel::class;
-    protected static ?string $navigationIcon = 'heroicon-o-rectangle-stack';
+    protected static ?string $navigationIcon = 'heroicon-o-chart-bar';
     protected static ?string $navigationGroup = '推广';
     protected static ?int $navigationSort = 5;
     protected static ?string $navigationLabel = '归因平台';

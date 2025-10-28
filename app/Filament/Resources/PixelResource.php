@@ -24,7 +24,7 @@ class PixelResource extends Resource
 {
     protected static ?string $model = Pixel::class;
 
-    protected static ?string $navigationIcon = 'heroicon-o-rectangle-stack';
+    protected static ?string $navigationIcon = 'heroicon-o-eye';
     protected static ?string $navigationGroup = '推广';
     protected static ?string $navigationLabel = '像素配置';
     protected static ?int $navigationSort = 2;

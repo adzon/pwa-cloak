@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Domain extends Model
 {
@@ -55,6 +56,22 @@ class Domain extends Model
     public function promotion(): BelongsTo
     {
         return $this->belongsTo(Promotion::class);
+    }
+
+    /**
+     * 获取父域名
+     */
+    public function parent(): BelongsTo
+    {
+        return $this->belongsTo(Domain::class, 'pid');
+    }
+
+    /**
+     * 获取所有子域名
+     */
+    public function children(): HasMany
+    {
+        return $this->hasMany(Domain::class, 'pid');
     }
 
     public function scopeAvailablePlatform($query)

@@ -16,7 +16,7 @@ use Filament\Tables\Actions\EditAction;
 class LanguageResource extends Resource
 {
     protected static ?string $model = Language::class;
-    protected static ?string $navigationIcon = 'heroicon-o-globe-alt';
+    protected static ?string $navigationIcon = 'heroicon-o-language';
     protected static ?string $navigationLabel = '语言';
     protected static ?string $pluralModelLabel = '语言';
 
