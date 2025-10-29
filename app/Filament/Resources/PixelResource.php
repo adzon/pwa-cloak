@@ -60,6 +60,7 @@ class PixelResource extends Resource
                     ->maxLength(255)
                     ->placeholder('请输入像素名称，便于识别'),
 
+                // TODO 验证像素配置token
                 TextInput::make('access_token')
                     ->label('Access Token')
                     ->required()
