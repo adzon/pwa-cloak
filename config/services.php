@@ -42,4 +42,8 @@ return [
         'mock' => env('AWS_MOCK', false),
     ],
 
+    'google' => [
+        'developer_token' => env('GOOGLE_DEVELOPER_TOKEN', ''),
+    ],
+
 ];
