@@ -4,6 +4,7 @@ namespace App\Filament\Resources\ApplicationResource\Pages;
 
 use App\Filament\Resources\ApplicationResource;
 use App\Models\Application;
+use App\Models\Comment;
 use Filament\Resources\Pages\EditRecord;
 use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\Auth;
@@ -47,25 +48,29 @@ class EditApplication extends EditRecord
                     ]
                 );
 
-                if (!empty($localeData['reviews'])) {
-                    // 先清除旧的评论关联（避免重复）
-                    $localeApp->comments()->detach();
-
-                    foreach ($localeData['reviews'] as $review) {
-                        // 如果评论已经有 ID，说明是已存在的评论，直接关联
-                        if (isset($review['id']) && $review['id']) {
-                            $localeApp->comments()->attach($review['id']);
-                        } else {
-                            // 新评论，创建后关联
-                            $newComment = \App\Models\Comment::create([
-                                'user_id' => Auth::id(),
-                                'language_id' => $review['language_id'] ?? $languageId,
-                                'nickname' => $review['nickname'] ?? '匿名用户',
-                                'content' => $review['content'] ?? '',
-                            ]);
-                            $localeApp->comments()->attach($newComment->id);
-                        }
+                // 处理评论绑定
+                if (isset($localeData['comment_ids']) && !empty($localeData['comment_ids'])) {
+                    $commentIds = $localeData['comment_ids'];
+                    
+                    // 确保是数组格式
+                    if (is_string($commentIds)) {
+                        $commentIds = json_decode($commentIds, true);
                     }
+                    
+                    // 过滤空值并转换为整数
+                    if (is_array($commentIds)) {
+                        $commentIds = array_filter(array_map('intval', $commentIds));
+                        
+                        if (!empty($commentIds)) {
+                            $localeApp->comments()->sync($commentIds);
+                        } else {
+                            $localeApp->comments()->detach();
+                        }
+                    } else {
+                        $localeApp->comments()->detach();
+                    }
+                } else {
+                    $localeApp->comments()->detach();
                 }
             }
         }
@@ -97,16 +102,8 @@ class EditApplication extends EditRecord
                         }
                     }
 
-                    // 处理评论数据
-                    $reviews = [];
-                    foreach ($localeApp->comments as $comment) {
-                        $reviews[] = [
-                            'id' => $comment->id,
-                            'nickname' => $comment->nickname,
-                            'content' => $comment->content,
-                            'language_id' => $comment->language_id,
-                        ];
-                    }
+                    // 处理评论数据 - 获取已绑定的评论ID
+                    $commentIds = $localeApp->comments->pluck('id')->toArray();
 
                     // 处理标签数据：确保转换为字符串数组格式（兼容旧的对象数组格式）
                     $labels = [];
@@ -133,7 +130,7 @@ class EditApplication extends EditRecord
                         'introduction' => $localeApp->introduction,
                         'label' => $labels,
                         'images' => $images,
-                        'reviews' => $reviews,
+                        'comment_ids' => $commentIds,
                     ];
                 }
 
@@ -142,5 +139,44 @@ class EditApplication extends EditRecord
         }
 
         return $data;
+    }
+    
+    /**
+     * 创建新评论
+     */
+    public function createComment(array $data)
+    {
+        $comment = Comment::create([
+            'user_id' => Auth::id(),
+            'nickname' => $data['nickname'],
+            'content' => $data['content'],
+            'language_id' => $data['language_id'],
+        ]);
+        
+        Notification::make()
+            ->success()
+            ->title('评论创建成功')
+            ->send();
+        
+        return $comment->id;
+    }
+    
+    /**
+     * 删除评论
+     */
+    public function deleteComment(int $commentId)
+    {
+        $comment = Comment::where('id', $commentId)
+            ->where('user_id', Auth::id())
+            ->first();
+        
+        if ($comment) {
+            $comment->delete();
+            
+            Notification::make()
+                ->success()
+                ->title('评论已删除')
+                ->send();
+        }
     }
 }

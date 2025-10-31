@@ -7,6 +7,7 @@ use App\Models\Application;
 use App\Models\Comment;
 use Illuminate\Support\Facades\Auth;
 use Filament\Resources\Pages\CreateRecord;
+use Filament\Notifications\Notification;
 
 class CreateApplication extends CreateRecord
 {
@@ -49,21 +50,66 @@ class CreateApplication extends CreateRecord
                     'label'         => $localeData['label'] ?? [],
                 ]);
 
-                // 保存评论
-                if (!empty($localeData['reviews'])) {
-                    foreach ($localeData['reviews'] as $review) {
-                        $comment = Comment::create([
-                            'user_id'     => Auth::id(),
-                            'language_id' => $review['language_id'] ?? $languageId,
-                            'nickname'    => $review['nickname'] ?? '匿名用户',
-                            'content'     => $review['content'] ?? '',
-                        ]);
-                        $localeApp->comments()->attach($comment->id);
+                // 处理评论绑定
+                if (isset($localeData['comment_ids']) && !empty($localeData['comment_ids'])) {
+                    $commentIds = $localeData['comment_ids'];
+                    
+                    // 确保是数组格式
+                    if (is_string($commentIds)) {
+                        $commentIds = json_decode($commentIds, true);
+                    }
+                    
+                    // 过滤空值并转换为整数
+                    if (is_array($commentIds)) {
+                        $commentIds = array_filter(array_map('intval', $commentIds));
+                        
+                        if (!empty($commentIds)) {
+                            $localeApp->comments()->attach($commentIds);
+                        }
                     }
                 }
             }
         }
 
         return $application;
+    }
+    
+    /**
+     * 创建新评论
+     */
+    public function createComment(array $data)
+    {
+        $comment = Comment::create([
+            'user_id' => Auth::id(),
+            'nickname' => $data['nickname'],
+            'content' => $data['content'],
+            'language_id' => $data['language_id'],
+        ]);
+        
+        Notification::make()
+            ->success()
+            ->title('评论创建成功')
+            ->send();
+        
+        return $comment->id;
+    }
+    
+    /**
+     * 删除评论
+     */
+    public function deleteComment(int $commentId)
+    {
+        $comment = Comment::where('id', $commentId)
+            ->where('user_id', Auth::id())
+            ->first();
+        
+        if ($comment) {
+            $comment->delete();
+            
+            Notification::make()
+                ->success()
+                ->title('评论已删除')
+                ->send();
+        }
     }
 }

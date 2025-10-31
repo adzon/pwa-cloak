@@ -21,14 +21,32 @@ class CommentResource extends Resource
     protected static ?string $model = Comment::class;
     protected static ?string $navigationIcon = 'heroicon-o-chat-bubble-left-right';
     protected static ?string $navigationLabel = '评论库';
+    
+    // 隐藏导航菜单
+    protected static bool $shouldRegisterNavigation = false;
 
     public static function form(Form $form): Form
     {
         return $form->schema([
-            TextInput::make('nickname')->label('昵称')->required(),
-            Textarea::make('content')->label('内容')->required()->rows(4),
+            TextInput::make('nickname')
+                ->label('昵称')
+                ->placeholder('请输入昵称')
+                ->required()
+                ->maxLength(20)
+                ->helperText('最多20个字符'),
+            
+            Textarea::make('content')
+                ->label('评论')
+                ->placeholder('请输入评论，字符在5-500个之间')
+                ->required()
+                ->minLength(5)
+                ->maxLength(500)
+                ->rows(4)
+                ->helperText('5-500个字符'),
+            
             Select::make('language_id')
                 ->label('语言')
+                ->placeholder('请选择语言')
                 ->options(Language::pluck('name', 'id'))
                 ->preload()
                 ->searchable()

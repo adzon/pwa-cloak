@@ -12,6 +12,7 @@ use Filament\Forms;
 use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\Component;
 use Filament\Forms\Components\FileUpload;
+use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Radio;
 use Filament\Forms\Components\Repeater;
@@ -23,6 +24,7 @@ use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Forms\Components\TagsInput;
+use Filament\Forms\Components\View;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
@@ -337,37 +339,15 @@ class ApplicationResource extends Resource
                                                 ])
                                                 ->columnSpanFull(),
 
+                                            Hidden::make("localeApplications.{$languageId}.comment_ids")
+                                                ->default([])
+                                                ->dehydrated(),
 
-                                    Repeater::make("localeApplications.{$languageId}.reviews")
-                                                ->label('APP评论库')
-                                                ->schema([
-                                                    TextInput::make('nickname')
-                                                        ->label('用户昵称')
-                                                        ->placeholder('输入评论者昵称')
-                                                        ->required()
-                                                        ->prefixIcon('heroicon-o-user'),
-
-                                                    Textarea::make('content')
-                                                        ->label('评论内容')
-                                                        ->placeholder('输入用户评论的内容')
-                                                        ->rows(2)
-                                                        ->required(),
-
-                                                    Select::make('language_id')
-                                                        ->label('语言')
-                                                        ->options(Language::pluck('name', 'id'))
-                                                        ->default($languageId)
-                                                        ->preload()
-                                                        ->searchable()
-                                                        ->required(),
+                                            View::make('filament.forms.components.comment-library-wrapper')
+                                                ->viewData([
+                                                    'statePath' => "localeApplications.{$languageId}.comment_ids",
+                                                    'languageId' => $languageId,
                                                 ])
-                                                ->columns(3)
-                                                ->addActionLabel('➕ 添加评论')
-                                                ->reorderableWithButtons()
-                                                ->collapsible()
-                                                ->required()
-                                                ->itemLabel(fn(array $state): ?string => $state['nickname'] ?? '新评论')
-                                                ->maxItems(6)
                                                 ->columnSpanFull(),
 
                                         ]);
