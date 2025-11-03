@@ -19,6 +19,47 @@ class LanguageResource extends Resource
     protected static ?string $navigationIcon = 'heroicon-o-language';
     protected static ?string $navigationLabel = '语言';
     protected static ?string $pluralModelLabel = '语言';
+    protected static ?string $navigationGroup = '系统管理';
+
+    /**
+     * 限制只有超级管理员可以访问语言管理
+     */
+    public static function canViewAny(): bool
+    {
+        return \isSuperAdmin();
+    }
+
+    /**
+     * 限制只有超级管理员可以创建语言
+     */
+    public static function canCreate(): bool
+    {
+        return \isSuperAdmin();
+    }
+
+    /**
+     * 限制只有超级管理员可以查看语言
+     */
+    public static function canView($record): bool
+    {
+        return \isSuperAdmin();
+    }
+
+    /**
+     * 限制只有超级管理员可以编辑语言
+     */
+    public static function canEdit($record): bool
+    {
+        return \isSuperAdmin();
+    }
+
+    /**
+     * 限制只有超级管理员可以删除语言
+     */
+    public static function canDelete($record): bool
+    {
+        return \isSuperAdmin();
+    }
 
     public static function form(Form $form): Form
     {

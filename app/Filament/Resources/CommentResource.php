@@ -3,6 +3,7 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\CommentResource\Pages;
+use App\Filament\Traits\HasUserAccess;
 use App\Models\Comment;
 use App\Models\Language;
 use Filament\Forms\Components\Select;
@@ -15,15 +16,24 @@ use Filament\Forms\Components\Textarea;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Actions\EditAction;
 use Filament\Tables;
+use Illuminate\Database\Eloquent\Builder;
 
 class CommentResource extends Resource
 {
+    use HasUserAccess;
+    
     protected static ?string $model = Comment::class;
     protected static ?string $navigationIcon = 'heroicon-o-chat-bubble-left-right';
     protected static ?string $navigationLabel = '评论库';
     
     // 隐藏导航菜单
     protected static bool $shouldRegisterNavigation = false;
+    
+    public static function getEloquentQuery(): Builder
+    {
+        $query = parent::getEloquentQuery();
+        return applyUserDataScope($query);
+    }
 
     public static function form(Form $form): Form
     {

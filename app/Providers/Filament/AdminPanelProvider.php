@@ -28,6 +28,9 @@ class AdminPanelProvider extends PanelProvider
             ->id('admin')
             ->path('admin')
             ->login()
+            ->registration()
+            ->passwordReset()
+            ->emailVerification()
             ->colors([
                 'primary' => Color::Amber,
             ])
@@ -53,6 +56,7 @@ class AdminPanelProvider extends PanelProvider
                     ->viewManagerEnabled(false)
 //                    ->viewManagerApplyButton(false)
                     ->viewIcon(false)
+                    ->resourceEnabled(false)  // 隐藏 UserView 资源模块
             ])
             ->middleware([
                 EncryptCookies::class,

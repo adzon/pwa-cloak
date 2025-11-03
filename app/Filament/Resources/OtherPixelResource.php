@@ -4,6 +4,7 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\OtherPixelResource\Pages;
 use App\Filament\Resources\OtherPixelResource\RelationManagers;
+use App\Filament\Traits\HasUserAccess;
 use App\Models\OtherPixel;
 use Filament\Forms;
 use Filament\Forms\Components\TextInput;
@@ -16,6 +17,8 @@ use Illuminate\Database\Eloquent\Builder;
 
 class OtherPixelResource extends Resource
 {
+    use HasUserAccess;
+    
     protected static ?string $model = OtherPixel::class;
     protected static ?string $navigationIcon = 'heroicon-o-chart-bar';
     protected static ?string $navigationGroup = '推广';
@@ -24,6 +27,12 @@ class OtherPixelResource extends Resource
     protected static ?string $slug = 'attribution';
     protected static ?string $pluralModelLabel = '归因平台';
     protected static ?string $modelLabel = '应用';
+
+    public static function getEloquentQuery(): Builder
+    {
+        $query = parent::getEloquentQuery();
+        return applyUserDataScope($query);
+    }
 
     public static function form(Form $form): Form
     {

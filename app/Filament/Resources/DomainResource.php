@@ -3,6 +3,7 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\DomainResource\Pages;
+use App\Filament\Traits\HasUserAccess;
 use App\Models\Domain;
 use App\Services\AwsRoute53Service;
 use Filament\Forms;
@@ -29,6 +30,8 @@ use Throwable;
 
 class DomainResource extends Resource
 {
+    use HasUserAccess;
+    
     protected static ?string $model = Domain::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-globe-alt';
@@ -36,6 +39,12 @@ class DomainResource extends Resource
     protected static ?string $navigationLabel = '域名管理';
     protected static ?string $pluralModelLabel = '域名';
     protected static ?int $navigationSort = 3;
+
+    public static function getEloquentQuery(): Builder
+    {
+        $query = parent::getEloquentQuery();
+        return applyUserDataScope($query);
+    }
 
     public static function form(Form $form): Form
     {

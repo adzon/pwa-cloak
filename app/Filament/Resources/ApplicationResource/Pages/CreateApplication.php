@@ -14,6 +14,29 @@ class CreateApplication extends CreateRecord
 {
     protected static string $resource = ApplicationResource::class;
     
+    protected function mutateFormDataBeforeFill(array $data): array
+    {
+        // 初始化 localeApplications 数据结构，确保每个语言的 comment_ids 都有默认值
+        if (!isset($data['localeApplications'])) {
+            $data['localeApplications'] = [];
+        }
+        
+        // 如果用户已经选择了语言，初始化这些语言的 localeApplications
+        if (isset($data['languages']) && is_array($data['languages'])) {
+            foreach ($data['languages'] as $languageId) {
+                if (!isset($data['localeApplications'][$languageId])) {
+                    $data['localeApplications'][$languageId] = [
+                        'comment_ids' => []
+                    ];
+                } elseif (!isset($data['localeApplications'][$languageId]['comment_ids'])) {
+                    $data['localeApplications'][$languageId]['comment_ids'] = [];
+                }
+            }
+        }
+        
+        return $data;
+    }
+    
     protected function beforeCreate(): void
     {
         // 获取表单数据
@@ -149,11 +172,19 @@ class CreateApplication extends CreateRecord
      */
     public function updateComment(int $commentId, array $data)
     {
-        $comment = Comment::where('id', $commentId)
-            ->where('user_id', Auth::id())
-            ->first();
+        $query = Comment::where('id', $commentId);
+        
+        // 超级管理员可以编辑所有评论，普通用户只能编辑自己的
+        if (!isSuperAdmin()) {
+            $query->where('user_id', Auth::id());
+        }
+        
+        $comment = $query->first();
         
         if ($comment) {
+            // 保护原始创建者
+            unset($data['user_id']);
+            
             $comment->update([
                 'nickname' => $data['nickname'],
                 'content' => $data['content'],
@@ -172,9 +203,14 @@ class CreateApplication extends CreateRecord
      */
     public function deleteComment(int $commentId)
     {
-        $comment = Comment::where('id', $commentId)
-            ->where('user_id', Auth::id())
-            ->first();
+        $query = Comment::where('id', $commentId);
+        
+        // 超级管理员可以删除所有评论，普通用户只能删除自己的
+        if (!\isSuperAdmin()) {
+            $query->where('user_id', Auth::id());
+        }
+        
+        $comment = $query->first();
         
         if ($comment) {
             $comment->delete();

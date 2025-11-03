@@ -14,7 +14,7 @@
 @endphp
 
 <div x-data="{
-    selectedComments: $wire.entangle('data.localeApplications.{{ $languageId }}.comment_ids').live,
+    selectedComments: [],
     showModal: false,
     editingCommentId: null,
     formData: {
@@ -30,16 +30,25 @@
     validationError: '',
     
     get hasValidationError() {
-        return this.validationError !== '' || (this.selectedComments.length < 2);
+        const comments = this.selectedComments || [];
+        return this.validationError !== '' || (comments.length < 2);
     },
     
     toggleComment(commentId) {
+        // 确保 selectedComments 是数组
+        if (!this.selectedComments || !Array.isArray(this.selectedComments)) {
+            this.selectedComments = [];
+        }
+        
         const index = this.selectedComments.indexOf(commentId);
         if (index > -1) {
             this.selectedComments.splice(index, 1);
         } else {
             this.selectedComments.push(commentId);
         }
+        
+        // 同步到 Livewire（确保数据结构存在）
+        this.syncToLivewire();
         
         // 更新验证错误消息
         if (this.selectedComments.length < 2) {
@@ -49,8 +58,23 @@
         }
     },
     
+    syncToLivewire() {
+        try {
+            // 确保 localeApplications 对象存在
+            const localeApps = $wire.get('data.localeApplications') || {};
+            if (!localeApps['{{ $languageId }}']) {
+                $wire.set('data.localeApplications.{{ $languageId }}', {});
+            }
+            // 同步 comment_ids
+            $wire.set('data.localeApplications.{{ $languageId }}.comment_ids', this.selectedComments);
+        } catch (e) {
+            console.warn('同步到 Livewire 失败:', e);
+        }
+    },
+    
     isSelected(commentId) {
-        return this.selectedComments.includes(commentId);
+        const comments = this.selectedComments || [];
+        return comments.includes(commentId);
     },
     
     openAddModal() {
@@ -171,9 +195,11 @@
                 }
                 
                 // 如果删除的评论在选中列表中，也要移除
-                const selectedIndex = this.selectedComments.indexOf(commentId);
-                if (selectedIndex > -1) {
-                    this.selectedComments.splice(selectedIndex, 1);
+                if (this.selectedComments && Array.isArray(this.selectedComments)) {
+                    const selectedIndex = this.selectedComments.indexOf(commentId);
+                    if (selectedIndex > -1) {
+                        this.selectedComments.splice(selectedIndex, 1);
+                    }
                 }
             } catch (error) {
                 console.error('删除失败:', error);
@@ -185,12 +211,48 @@
 @mousemove.window="onDrag($event)"
 @mouseup.window="stopDrag()"
 x-init="
-    // 初始化验证
-    selectedComments.length < 2 && (validationError = '请至少选择两条评论');
+    // 初始化：从 Livewire 加载数据（如果存在）
+    $nextTick(() => {
+        try {
+            const localeApps = $wire.get('data.localeApplications') || {};
+            if (localeApps['{{ $languageId }}'] && Array.isArray(localeApps['{{ $languageId }}'].comment_ids)) {
+                selectedComments = [...localeApps['{{ $languageId }}'].comment_ids];
+            } else {
+                selectedComments = [];
+                // 确保 Livewire 数据结构存在
+                if (!localeApps['{{ $languageId }}']) {
+                    $wire.set('data.localeApplications.{{ $languageId }}', {
+                        comment_ids: []
+                    });
+                }
+            }
+        } catch (e) {
+            console.warn('初始化 Livewire 数据失败:', e);
+            selectedComments = [];
+        }
+        
+        // 初始化验证
+        if (selectedComments.length < 2) {
+            validationError = '请至少选择两条评论';
+        }
+    });
     
     // 监听评论选择变化，更新验证状态
     $watch('selectedComments', (value) => {
-        if (value.length < 2) {
+        const comments = value || [];
+        
+        // 同步到 Livewire
+        try {
+            const localeApps = $wire.get('data.localeApplications') || {};
+            if (!localeApps['{{ $languageId }}']) {
+                $wire.set('data.localeApplications.{{ $languageId }}', {});
+            }
+            $wire.set('data.localeApplications.{{ $languageId }}.comment_ids', comments);
+        } catch (e) {
+            console.warn('同步到 Livewire 失败:', e);
+        }
+        
+        if (comments.length < 2) {
             validationError = '请至少选择两条评论';
         } else {
             validationError = '';
@@ -206,7 +268,7 @@ x-init="
                     APP评论库
                 </span>
                 <span class="text-xs text-gray-500 dark:text-gray-400">
-                    (已选 <span x-text="selectedComments.length" class="font-medium text-primary-600 dark:text-primary-400"></span> 条)
+                    (已选 <span x-text="(selectedComments || []).length" class="font-medium text-primary-600 dark:text-primary-400"></span> 条)
                 </span>
             </label>
             <button
@@ -270,7 +332,7 @@ x-init="
                                     <div class="flex w-full items-center gap-x-3 px-3 py-4">
                                         <input
                                             type="checkbox"
-                                            :checked="selectedComments.includes(comment.id)"
+                                            :checked="isSelected(comment.id)"
                                             @change="toggleComment(comment.id)"
                                             class="fi-checkbox-input rounded border-gray-300 text-primary-600 shadow-sm outline-none transition duration-75 focus:ring-2 focus:ring-primary-600/50 disabled:pointer-events-none disabled:bg-gray-50 disabled:text-gray-50 disabled:checked:bg-gray-400 dark:border-white/10 dark:bg-white/5 dark:focus:ring-primary-500/50 dark:disabled:bg-transparent dark:disabled:checked:bg-gray-600 h-4 w-4"
                                         >

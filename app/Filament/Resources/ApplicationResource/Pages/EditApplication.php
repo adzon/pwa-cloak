@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\ApplicationResource\Pages;
 
 use App\Filament\Resources\ApplicationResource;
+use App\Filament\Traits\ProtectsUserOwnership;
 use App\Models\Application;
 use App\Models\Comment;
 use Filament\Resources\Pages\EditRecord;
@@ -12,6 +13,8 @@ use Illuminate\Validation\ValidationException;
 
 class EditApplication extends EditRecord
 {
+    use ProtectsUserOwnership;
+    
     protected static string $resource = ApplicationResource::class;
     
     protected function onValidationError(ValidationException $exception): void
@@ -49,6 +52,9 @@ class EditApplication extends EditRecord
 
     protected function handleRecordUpdate($record, array $data): Application
     {
+        // 确保不会修改 user_id（保护原始创建者）
+        unset($data['user_id']);
+        
         $record->update($data);
 
         // 保存语言关系
@@ -192,11 +198,19 @@ class EditApplication extends EditRecord
      */
     public function updateComment(int $commentId, array $data)
     {
-        $comment = Comment::where('id', $commentId)
-            ->where('user_id', Auth::id())
-            ->first();
+        $query = Comment::where('id', $commentId);
+        
+        // 超级管理员可以编辑所有评论，普通用户只能编辑自己的
+        if (!\isSuperAdmin()) {
+            $query->where('user_id', Auth::id());
+        }
+        
+        $comment = $query->first();
         
         if ($comment) {
+            // 保护原始创建者
+            unset($data['user_id']);
+            
             $comment->update([
                 'nickname' => $data['nickname'],
                 'content' => $data['content'],
@@ -215,9 +229,14 @@ class EditApplication extends EditRecord
      */
     public function deleteComment(int $commentId)
     {
-        $comment = Comment::where('id', $commentId)
-            ->where('user_id', Auth::id())
-            ->first();
+        $query = Comment::where('id', $commentId);
+        
+        // 超级管理员可以删除所有评论，普通用户只能删除自己的
+        if (!\isSuperAdmin()) {
+            $query->where('user_id', Auth::id());
+        }
+        
+        $comment = $query->first();
         
         if ($comment) {
             $comment->delete();

@@ -5,6 +5,7 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\ApplicationResource\Enum\CategoryEnum;
 use App\Filament\Resources\ApplicationResource\Pages;
 use App\Filament\Resources\ApplicationResource\RelationManagers;
+use App\Filament\Traits\HasUserAccess;
 use App\Models\Application;
 use App\Models\Language;
 use Arr;
@@ -44,6 +45,8 @@ use Illuminate\Support\Facades\Auth;
 
 class ApplicationResource extends Resource
 {
+    use HasUserAccess;
+    
     protected static ?string $model = Application::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-device-phone-mobile';
@@ -54,9 +57,11 @@ class ApplicationResource extends Resource
 
     public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery()
-            ->where('user_id', Auth::id())
+        $query = parent::getEloquentQuery()
             ->with(['languages', 'localeApplications.comments']);
+            
+        // 应用用户数据权限过滤
+        return applyUserDataScope($query);
     }
 
 
@@ -360,8 +365,12 @@ class ApplicationResource extends Resource
 
                                             View::make('filament.forms.components.comment-library-wrapper')
                                                 ->viewData(function (Get $get, $record) use ($languageId) {
-                                                    // 获取当前用户的所有评论
-                                                    $allComments = \App\Models\Comment::where('user_id', Auth::id())
+                                                    // 获取评论：超级管理员可以看到所有评论，普通用户只能看到自己的
+                                                    $commentsQuery = \App\Models\Comment::query();
+                                                    if (!\isSuperAdmin()) {
+                                                        $commentsQuery->where('user_id', Auth::id());
+                                                    }
+                                                    $allComments = $commentsQuery
                                                         ->with('language')
                                                         ->orderBy('created_at', 'desc')
                                                         ->get();

@@ -5,6 +5,7 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\PixelResource\Enum\ChannelEnum;
 use App\Filament\Resources\PixelResource\Pages;
 use App\Filament\Resources\PixelResource\RelationManagers;
+use App\Filament\Traits\HasUserAccess;
 use App\Models\Pixel;
 use App\Models\User;
 use Filament\Forms;
@@ -22,6 +23,8 @@ use Illuminate\Database\Eloquent\SoftDeletingScope;
 
 class PixelResource extends Resource
 {
+    use HasUserAccess;
+    
     protected static ?string $model = Pixel::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-eye';
@@ -31,6 +34,12 @@ class PixelResource extends Resource
     protected static ?string $pluralModelLabel = '像素';
     protected static ?string $modelLabel = '像素';
     protected static ?string $slug = 'pixels';
+
+    public static function getEloquentQuery(): Builder
+    {
+        $query = parent::getEloquentQuery();
+        return applyUserDataScope($query);
+    }
 
     public static function form(Form $form): Form
     {

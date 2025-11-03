@@ -8,6 +8,7 @@ use App\Filament\Resources\PixelResource\Enum\PixelStatusEnum;
 use App\Filament\Resources\PromotionResource\Enum\TemplateEnum;
 use App\Filament\Resources\PromotionResource\Pages;
 use App\Filament\Resources\PromotionResource\RelationManagers;
+use App\Filament\Traits\HasUserAccess;
 use App\Models\Domain;
 use App\Models\OtherPixel;
 use App\Models\Pixel;
@@ -41,10 +42,12 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
-use Str;
+use Illuminate\Support\Str;
 
 class PromotionResource extends Resource
 {
+    use HasUserAccess;
+    
     protected static ?string $model = Promotion::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-link';
@@ -54,6 +57,12 @@ class PromotionResource extends Resource
     protected static ?string $slug = 'promotion';
     protected static ?string $pluralModelLabel = '推广链接';
     protected static ?string $modelLabel = '推广链接';
+
+    public static function getEloquentQuery(): Builder
+    {
+        $query = parent::getEloquentQuery();
+        return applyUserDataScope($query);
+    }
 
     public static function form(Form $form): Form
     {

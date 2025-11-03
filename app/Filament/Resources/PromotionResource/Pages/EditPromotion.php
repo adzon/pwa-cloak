@@ -3,15 +3,25 @@
 namespace App\Filament\Resources\PromotionResource\Pages;
 
 use App\Filament\Resources\PromotionResource;
+use App\Filament\Traits\ProtectsUserOwnership;
 use App\Models\Domain;
 use App\Models\OtherPixel;
 use Filament\Actions;
 use Filament\Resources\Pages\EditRecord;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Auth;
 
 class EditPromotion extends EditRecord
 {
+    use ProtectsUserOwnership;
+    
     protected static string $resource = PromotionResource::class;
+    
+    protected function handleRecordUpdate(Model $record, array $data): Model
+    {
+        $this->protectUserOwnership($data);
+        return parent::handleRecordUpdate($record, $data);
+    }
 
     protected function getHeaderActions(): array
     {
