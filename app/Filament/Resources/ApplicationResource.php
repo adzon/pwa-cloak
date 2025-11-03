@@ -9,6 +9,7 @@ use App\Models\Application;
 use App\Models\Language;
 use Arr;
 use Filament\Forms;
+use Filament\Forms\Get;
 use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\Component;
 use Filament\Forms\Components\FileUpload;
@@ -341,13 +342,60 @@ class ApplicationResource extends Resource
 
                                             Hidden::make("localeApplications.{$languageId}.comment_ids")
                                                 ->default([])
-                                                ->dehydrated(),
+                                                ->dehydrated()
+                                                ->rule(function () use ($language) {
+                                                    return function (string $attribute, $value, \Closure $fail) use ($language) {
+                                                        // 确保值是数组
+                                                        if (!is_array($value)) {
+                                                            $value = json_decode($value, true) ?? [];
+                                                        }
+                                                        
+                                                        // 检查数组元素数量
+                                                        if (count($value) < 2) {
+                                                            $languageName = $language ? $language->name : '当前语言';
+                                                            $fail("【{$languageName}】标签页需要至少选择2条评论");
+                                                        }
+                                                    };
+                                                }),
 
                                             View::make('filament.forms.components.comment-library-wrapper')
-                                                ->viewData([
-                                                    'statePath' => "localeApplications.{$languageId}.comment_ids",
-                                                    'languageId' => $languageId,
-                                                ])
+                                                ->viewData(function (Get $get, $record) use ($languageId) {
+                                                    // 获取当前用户的所有评论
+                                                    $allComments = \App\Models\Comment::where('user_id', Auth::id())
+                                                        ->with('language')
+                                                        ->orderBy('created_at', 'desc')
+                                                        ->get();
+                                                    
+                                                    // 获取所有语言
+                                                    $languages = Language::orderBy('id')->get();
+                                                    
+                                                    // 获取已选中的评论IDs
+                                                    $selectedIds = [];
+                                                    if ($record && $record->exists) {
+                                                        $localeApp = $record->localeApplications()
+                                                            ->where('language_id', $languageId)
+                                                            ->first();
+                                                        if ($localeApp) {
+                                                            $selectedIds = $localeApp->comments()
+                                                                ->pluck('comments.id')
+                                                                ->toArray();
+                                                        }
+                                                    } else {
+                                                        // 创建模式：从表单状态获取
+                                                        $localeApps = $get('localeApplications');
+                                                        if (isset($localeApps[$languageId]['comment_ids'])) {
+                                                            $selectedIds = $localeApps[$languageId]['comment_ids'];
+                                                        }
+                                                    }
+                                                    
+                                                    return [
+                                                        'statePath' => "localeApplications.{$languageId}.comment_ids",
+                                                        'languageId' => $languageId,
+                                                        'allComments' => $allComments,
+                                                        'languages' => $languages,
+                                                        'selectedIds' => $selectedIds,
+                                                    ];
+                                                })
                                                 ->columnSpanFull(),
 
                                         ]);

@@ -8,14 +8,64 @@ use App\Models\Comment;
 use Illuminate\Support\Facades\Auth;
 use Filament\Resources\Pages\CreateRecord;
 use Filament\Notifications\Notification;
+use Illuminate\Validation\ValidationException;
 
 class CreateApplication extends CreateRecord
 {
     protected static string $resource = ApplicationResource::class;
+    
+    protected function beforeCreate(): void
+    {
+        // 获取表单数据
+        $data = $this->form->getState();
+        
+        // 验证评论数量
+        if (isset($data['localeApplications'])) {
+            $errors = [];
+            foreach ($data['localeApplications'] as $languageId => $localeData) {
+                $commentIds = $localeData['comment_ids'] ?? [];
+                
+                if (is_string($commentIds)) {
+                    $commentIds = json_decode($commentIds, true) ?? [];
+                }
+                
+                if (!is_array($commentIds) || count($commentIds) < 2) {
+                    $errors["data.localeApplications.{$languageId}.comment_ids"] = '请至少选择两条评论';
+                }
+            }
+            
+            if (!empty($errors)) {
+                throw ValidationException::withMessages($errors);
+            }
+        }
+    }
 
     protected function mutateFormDataBeforeCreate(array $data): array
     {
         $data['user_id'] = Auth::id();
+        
+        // 手动验证评论数量
+        if (isset($data['localeApplications'])) {
+            $errors = [];
+            foreach ($data['localeApplications'] as $languageId => $localeData) {
+                $commentIds = $localeData['comment_ids'] ?? [];
+                
+                // 确保是数组
+                if (is_string($commentIds)) {
+                    $commentIds = json_decode($commentIds, true) ?? [];
+                }
+                
+                // 验证至少选择2条评论
+                if (!is_array($commentIds) || count($commentIds) < 2) {
+                    $errors["data.localeApplications.{$languageId}.comment_ids"] = '请至少选择两条评论';
+                }
+            }
+            
+            if (!empty($errors)) {
+                throw ValidationException::withMessages($errors);
+            }
+        }
+        
         return $data;
     }
 
@@ -92,6 +142,29 @@ class CreateApplication extends CreateRecord
             ->send();
         
         return $comment->id;
+    }
+    
+    /**
+     * 更新评论
+     */
+    public function updateComment(int $commentId, array $data)
+    {
+        $comment = Comment::where('id', $commentId)
+            ->where('user_id', Auth::id())
+            ->first();
+        
+        if ($comment) {
+            $comment->update([
+                'nickname' => $data['nickname'],
+                'content' => $data['content'],
+                'language_id' => $data['language_id'],
+            ]);
+            
+            Notification::make()
+                ->success()
+                ->title('评论已更新')
+                ->send();
+        }
     }
     
     /**

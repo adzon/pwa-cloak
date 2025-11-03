@@ -1,49 +1,16 @@
 @php
-    use App\Models\Comment;
-    use Illuminate\Support\Facades\Auth;
+    // 数据已通过 viewData 从 ApplicationResource 传递
+    // $allComments - 当前用户的所有评论
+    // $languages - 所有语言列表
+    // $selectedIds - 已选中的评论IDs
+    // $languageId - 当前语言ID
+    // $statePath - 表单字段路径
     
-    // 获取已选中的评论IDs
-    $selectedIds = [];
-    try {
-        // 尝试从多个来源获取数据
-        if (isset($getRecord) && is_callable($getRecord)) {
-            $record = $getRecord();
-            if ($record && $record->exists) {
-                // 编辑模式：从数据库加载
-                $localeApp = $record->localeApplications()->where('language_id', $languageId)->first();
-                if ($localeApp) {
-                    $selectedIds = $localeApp->comments()->pluck('comments.id')->toArray();
-                }
-            }
-        }
-        
-        // 如果上面没有获取到，尝试从表单状态获取
-        if (empty($selectedIds) && isset($this) && method_exists($this, 'data')) {
-            $data = $this->data;
-            if (isset($data['localeApplications'][$languageId]['comment_ids'])) {
-                $selectedIds = $data['localeApplications'][$languageId]['comment_ids'];
-            }
-        }
-        
-        // 确保是数组
-        if (!is_array($selectedIds)) {
-            $selectedIds = [];
-        }
-        
-        // 转换为整数数组
-        $selectedIds = array_map('intval', array_filter($selectedIds));
-        
-    } catch (\Exception $e) {
+    // 确保 selectedIds 是数组
+    $selectedIds = $selectedIds ?? [];
+    if (!is_array($selectedIds)) {
         $selectedIds = [];
     }
-    
-    // 获取当前用户的所有评论
-    $allComments = Comment::where('user_id', Auth::id())
-        ->with('language')
-        ->orderBy('created_at', 'desc')
-        ->get();
-    
-    $languages = \App\Models\Language::orderBy('id')->get();
 @endphp
 
 <div x-data="{
@@ -59,6 +26,12 @@
     isDragging: false,
     modalPosition: { x: 0, y: 0 },
     dragStart: { x: 0, y: 0 },
+    allComments: @js($allComments->toArray()),
+    validationError: '',
+    
+    get hasValidationError() {
+        return this.validationError !== '' || (this.selectedComments.length < 2);
+    },
     
     toggleComment(commentId) {
         const index = this.selectedComments.indexOf(commentId);
@@ -66,6 +39,13 @@
             this.selectedComments.splice(index, 1);
         } else {
             this.selectedComments.push(commentId);
+        }
+        
+        // 更新验证错误消息
+        if (this.selectedComments.length < 2) {
+            this.validationError = '请至少选择两条评论';
+        } else {
+            this.validationError = '';
         }
     },
     
@@ -144,18 +124,38 @@
         
         try {
             if (this.editingCommentId) {
-                const response = await $wire.call('mountedTableActionData', {
-                    action: 'edit',
-                    record: this.editingCommentId,
-                    data: this.formData
-                });
+                // 编辑评论
+                await $wire.call('updateComment', this.editingCommentId, this.formData);
+                // 在本地更新列表
+                const index = this.allComments.findIndex(c => c.id === this.editingCommentId);
+                if (index !== -1) {
+                    const allLanguages = @js($languages);
+                    this.allComments[index] = {
+                        ...this.allComments[index],
+                        nickname: this.formData.nickname,
+                        content: this.formData.content,
+                        language_id: this.formData.language_id,
+                        language: allLanguages.find(l => l.id === this.formData.language_id)
+                    };
+                }
             } else {
-                const response = await $wire.call('createComment', this.formData);
+                // 创建新评论
+                const newCommentId = await $wire.call('createComment', this.formData);
+                // 添加到本地列表
+                const allLanguages = @js($languages);
+                this.allComments.unshift({
+                    id: newCommentId,
+                    nickname: this.formData.nickname,
+                    content: this.formData.content,
+                    language_id: this.formData.language_id,
+                    language: allLanguages.find(l => l.id === this.formData.language_id),
+                    created_at: new Date().toISOString()
+                });
             }
             this.closeModal();
-            window.location.reload();
         } catch (error) {
             console.error('保存失败:', error);
+            this.errors.general = '保存失败，请重试';
         }
     },
     
@@ -163,20 +163,40 @@
         if (confirm('确定要删除这条评论吗？')) {
             try {
                 await $wire.call('deleteComment', commentId);
-                // 如果删除的评论在选中列表中，也要移除
-                const index = this.selectedComments.indexOf(commentId);
-                if (index > -1) {
-                    this.selectedComments.splice(index, 1);
+                
+                // 从本地列表中移除
+                const commentIndex = this.allComments.findIndex(c => c.id === commentId);
+                if (commentIndex !== -1) {
+                    this.allComments.splice(commentIndex, 1);
                 }
-                window.location.reload();
+                
+                // 如果删除的评论在选中列表中，也要移除
+                const selectedIndex = this.selectedComments.indexOf(commentId);
+                if (selectedIndex > -1) {
+                    this.selectedComments.splice(selectedIndex, 1);
+                }
             } catch (error) {
                 console.error('删除失败:', error);
+                alert('删除失败，请重试');
             }
         }
     }
 }"
 @mousemove.window="onDrag($event)"
-@mouseup.window="stopDrag()">
+@mouseup.window="stopDrag()"
+x-init="
+    // 初始化验证
+    selectedComments.length < 2 && (validationError = '请至少选择两条评论');
+    
+    // 监听评论选择变化，更新验证状态
+    $watch('selectedComments', (value) => {
+        if (value.length < 2) {
+            validationError = '请至少选择两条评论';
+        } else {
+            validationError = '';
+        }
+    });
+">
 
     <div class="fi-fo-field-wrp">
         <div class="flex items-center justify-between gap-2 mb-2">
@@ -201,7 +221,10 @@
             </button>
         </div>
 
-        <div class="fi-ta-ctn divide-y divide-gray-200 overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-gray-950/5 dark:divide-white/10 dark:bg-gray-900 dark:ring-white/10">
+        <div 
+            class="fi-ta-ctn divide-y divide-gray-200 overflow-hidden rounded-xl bg-white shadow-sm ring-1 dark:divide-white/10 dark:bg-gray-900"
+            :class="hasValidationError ? 'ring-danger-600 dark:ring-danger-500' : 'ring-gray-950/5 dark:ring-white/10'"
+        >
             <table class="fi-ta-table w-full table-auto divide-y divide-gray-200 text-start dark:divide-white/5">
                 <thead class="divide-y divide-gray-200 dark:divide-white/5">
                     <tr class="bg-gray-50 dark:bg-white/5">
@@ -239,15 +262,16 @@
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-gray-200 whitespace-nowrap dark:divide-white/5">
-                    @forelse($allComments as $comment)
+                    <!-- 使用 Alpine.js 渲染以支持动态更新 -->
+                    <template x-for="comment in allComments" :key="comment.id">
                         <tr class="fi-ta-row [@media(hover:hover)]:transition [@media(hover:hover)]:duration-75 hover:bg-gray-50 dark:hover:bg-white/5">
                             <td class="fi-ta-cell p-0 first-of-type:ps-1 last-of-type:pe-1 sm:first-of-type:ps-3 sm:last-of-type:pe-3">
                                 <div class="fi-ta-col-wrp">
                                     <div class="flex w-full items-center gap-x-3 px-3 py-4">
                                         <input
                                             type="checkbox"
-                                            :checked="isSelected({{ $comment->id }})"
-                                            @change="toggleComment({{ $comment->id }})"
+                                            :checked="selectedComments.includes(comment.id)"
+                                            @change="toggleComment(comment.id)"
                                             class="fi-checkbox-input rounded border-gray-300 text-primary-600 shadow-sm outline-none transition duration-75 focus:ring-2 focus:ring-primary-600/50 disabled:pointer-events-none disabled:bg-gray-50 disabled:text-gray-50 disabled:checked:bg-gray-400 dark:border-white/10 dark:bg-white/5 dark:focus:ring-primary-500/50 dark:disabled:bg-transparent dark:disabled:checked:bg-gray-600 h-4 w-4"
                                         >
                                     </div>
@@ -257,9 +281,7 @@
                                 <div class="fi-ta-col-wrp">
                                     <div class="flex w-full items-center gap-x-3 px-3 py-4">
                                         <div class="fi-ta-text-item inline-flex items-center gap-1.5">
-                                            <span class="fi-ta-text-item-label text-sm leading-6 text-gray-950 dark:text-white">
-                                                {{ $comment->nickname }}
-                                            </span>
+                                            <span class="fi-ta-text-item-label text-sm leading-6 text-gray-950 dark:text-white" x-text="comment.nickname"></span>
                                         </div>
                                     </div>
                                 </div>
@@ -268,9 +290,7 @@
                                 <div class="fi-ta-col-wrp">
                                     <div class="flex w-full items-center gap-x-3 px-3 py-4">
                                         <div class="fi-ta-text-item inline-flex items-center gap-1.5 max-w-md">
-                                            <span class="fi-ta-text-item-label text-sm leading-6 text-gray-950 dark:text-white truncate">
-                                                {{ $comment->content }}
-                                            </span>
+                                            <span class="fi-ta-text-item-label text-sm leading-6 text-gray-950 dark:text-white truncate" x-text="comment.content"></span>
                                         </div>
                                     </div>
                                 </div>
@@ -279,9 +299,7 @@
                                 <div class="fi-ta-col-wrp">
                                     <div class="flex w-full items-center gap-x-3 px-3 py-4">
                                         <div class="fi-ta-text-item inline-flex items-center gap-1.5">
-                                            <span class="fi-ta-text-item-label text-sm leading-6 text-gray-950 dark:text-white">
-                                                {{ $comment->language->name ?? '-' }}
-                                            </span>
+                                            <span class="fi-ta-text-item-label text-sm leading-6 text-gray-950 dark:text-white" x-text="comment.language?.name || '-'"></span>
                                         </div>
                                     </div>
                                 </div>
@@ -292,19 +310,14 @@
                                         <div class="fi-ta-actions flex shrink-0 items-center gap-3">
                                             <button
                                                 type="button"
-                                                @click="openEditModal({{ json_encode([
-                                                    'id' => $comment->id,
-                                                    'nickname' => $comment->nickname,
-                                                    'content' => $comment->content,
-                                                    'language_id' => $comment->language_id
-                                                ]) }})"
+                                                @click="openEditModal(comment)"
                                                 class="fi-link group/link relative inline-flex items-center justify-center outline-none text-sm hover:underline focus-visible:underline fi-size-md gap-1.5 fi-link-size-md fi-color-primary text-primary-600 hover:text-primary-500 dark:text-primary-400 dark:hover:text-primary-300"
                                             >
                                                 编辑
                                             </button>
                                             <button
                                                 type="button"
-                                                @click="deleteComment({{ $comment->id }})"
+                                                @click="deleteComment(comment.id)"
                                                 class="fi-link group/link relative inline-flex items-center justify-center outline-none text-sm hover:underline focus-visible:underline fi-size-md gap-1.5 fi-link-size-md fi-color-danger text-danger-600 hover:text-danger-500 dark:text-danger-400 dark:hover:text-danger-300"
                                             >
                                                 删除
@@ -314,28 +327,36 @@
                                 </div>
                             </td>
                         </tr>
-                    @empty
-                        <tr>
-                            <td colspan="5" class="fi-ta-empty-state px-6 py-12">
-                                <div class="fi-ta-empty-state-content mx-auto grid max-w-lg justify-items-center text-center">
-                                    <div class="fi-ta-empty-state-icon-ctn mb-4 rounded-full bg-gray-100 p-3 dark:bg-gray-500/20">
-                                        <svg class="fi-ta-empty-state-icon h-6 w-6 text-gray-500 dark:text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-                                            <path stroke-linecap="round" stroke-linejoin="round" d="M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.129.166 2.27.293 3.423.379.35.026.67.21.865.501L12 21l2.755-4.133a1.14 1.14 0 01.865-.501 48.172 48.172 0 003.423-.379c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z" />
-                                        </svg>
-                                    </div>
-                                    <p class="fi-ta-empty-state-heading text-base font-semibold leading-6 text-gray-950 dark:text-white">
-                                        暂无评论
-                                    </p>
-                                    <p class="fi-ta-empty-state-description text-sm text-gray-500 dark:text-gray-400">
-                                        点击"添加"按钮创建新评论
-                                    </p>
+                    </template>
+                    
+                    <!-- 空状态 -->
+                    <tr x-show="allComments.length === 0">
+                        <td colspan="5" class="fi-ta-empty-state px-6 py-12">
+                            <div class="fi-ta-empty-state-content mx-auto grid max-w-lg justify-items-center text-center">
+                                <div class="fi-ta-empty-state-icon-ctn mb-4 rounded-full bg-gray-100 p-3 dark:bg-gray-500/20">
+                                    <svg class="fi-ta-empty-state-icon h-6 w-6 text-gray-500 dark:text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.129.166 2.27.293 3.423.379.35.026.67.21.865.501L12 21l2.755-4.133a1.14 1.14 0 01.865-.501 48.172 48.172 0 003.423-.379c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z" />
+                                    </svg>
                                 </div>
-                            </td>
-                        </tr>
-                    @endforelse
+                                <p class="fi-ta-empty-state-heading text-base font-semibold leading-6 text-gray-950 dark:text-white">
+                                    暂无评论
+                                </p>
+                                <p class="fi-ta-empty-state-description text-sm text-gray-500 dark:text-gray-400">
+                                    点击"添加"按钮创建新评论
+                                </p>
+                            </div>
+                        </td>
+                    </tr>
                 </tbody>
             </table>
         </div>
+        
+        <!-- 验证错误提示 -->
+        <p 
+            x-show="hasValidationError && validationError" 
+            x-text="validationError"
+            class="fi-fo-field-wrp-error-message text-sm text-danger-600 dark:text-danger-400 mt-2"
+        ></p>
     </div>
 
     <!-- 添加/编辑评论模态框 -->

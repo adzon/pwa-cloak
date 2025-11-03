@@ -43,7 +43,7 @@ class PixelResource extends Resource
                     ->disabled(fn($livewire) => $livewire instanceof Pages\CreatePixel)
                     ->dehydrated()
                     ->helperText(fn($livewire) => $livewire instanceof Pages\CreatePixel
-                        ? '渠道已根据当前预设视图自动选择'
+                        ? '渠道已自动选择'
                         : null
                     ),
 

@@ -8,10 +8,36 @@ use App\Models\Comment;
 use Filament\Resources\Pages\EditRecord;
 use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\ValidationException;
 
 class EditApplication extends EditRecord
 {
     protected static string $resource = ApplicationResource::class;
+    
+    protected function onValidationError(ValidationException $exception): void
+    {
+        parent::onValidationError($exception);
+        
+        // 检查是否有评论相关的验证错误
+        $errors = $exception->errors();
+        $commentErrors = [];
+        
+        foreach ($errors as $field => $messages) {
+            if (strpos($field, 'comment_ids') !== false) {
+                $commentErrors = array_merge($commentErrors, $messages);
+            }
+        }
+        
+        // 如果有评论验证错误，显示明显的通知
+        if (!empty($commentErrors)) {
+            Notification::make()
+                ->danger()
+                ->title('验证失败')
+                ->body(implode("\n", $commentErrors))
+                ->persistent()
+                ->send();
+        }
+    }
 
     protected function afterSave(): void
     {
@@ -159,6 +185,29 @@ class EditApplication extends EditRecord
             ->send();
         
         return $comment->id;
+    }
+    
+    /**
+     * 更新评论
+     */
+    public function updateComment(int $commentId, array $data)
+    {
+        $comment = Comment::where('id', $commentId)
+            ->where('user_id', Auth::id())
+            ->first();
+        
+        if ($comment) {
+            $comment->update([
+                'nickname' => $data['nickname'],
+                'content' => $data['content'],
+                'language_id' => $data['language_id'],
+            ]);
+            
+            Notification::make()
+                ->success()
+                ->title('评论已更新')
+                ->send();
+        }
     }
     
     /**
