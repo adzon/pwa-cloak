@@ -464,6 +464,7 @@ class CustomAppResource extends Resource
         return $table
             ->columns([
                 // 卡片视图列
+                ## TODO 列表布局后续优化
                 ViewColumn::make('card')
                     ->view('filament.tables.custom-app-card')
                     ->viewData(fn($record) => ['record' => $record]),
