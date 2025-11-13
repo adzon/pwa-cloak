@@ -36,10 +36,12 @@ class Application extends Model
         'is_iframe',
         'complaint',
         'complaint_config',
-        'is_delete'
+        'is_delete',
+        'app_type'
     ];
 
     protected $casts = [
+        'user_id' => 'integer',
         'google_show' => 'boolean',
         'official_verified' => 'boolean',
         'apk_upload_enabled' => 'boolean',
@@ -48,9 +50,12 @@ class Application extends Model
         'w2a_auto_down' => 'boolean',
         'is_iframe' => 'boolean',
         'complaint' => 'boolean',
-        'is_delete' => 'boolean'
+        'is_delete' => 'boolean',
+        'app_type' => 'integer',
     ];
 
+    public const APP_TYPE_NORMAL = 1;
+    public const APP_TYPE_CUSTOM = 2;
 
     public function user(): BelongsTo
     {
@@ -103,6 +108,4 @@ class Application extends Model
     {
         $this->attributes['complaint_config'] = is_array($value) ? implode(',', $value) : $value;
     }
-
-
 }

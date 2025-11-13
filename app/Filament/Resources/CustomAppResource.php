@@ -3,22 +3,19 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\ApplicationResource\Enum\CategoryEnum;
-use App\Filament\Resources\ApplicationResource\Pages;
-use App\Filament\Resources\ApplicationResource\RelationManagers;
 use App\Filament\Resources\CustomAppResource\Enum\ButtonPositionEnum;
+use App\Filament\Resources\CustomAppResource\Pages;
+use App\Filament\Resources\CustomAppResource\RelationManagers;
 use App\Filament\Traits\HasUserAccess;
 use App\Models\Application;
 use App\Models\Language;
-use Arr;
 use Filament\Forms;
-use Filament\Forms\Get;
 use Filament\Forms\Components\CheckboxList;
-use Filament\Forms\Components\Component;
+use Filament\Forms\Components\ColorPicker;
 use Filament\Forms\Components\FileUpload;
+use Filament\Forms\Components\Grid;
 use Filament\Forms\Components\Hidden;
-use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Radio;
-use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Section;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Tabs;
@@ -26,55 +23,47 @@ use Filament\Forms\Components\Tabs\Tab;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
-use Filament\Forms\Components\TagsInput;
 use Filament\Forms\Components\View;
 use Filament\Forms\Form;
+use Filament\Forms\Get;
 use Filament\Resources\Resource;
 use Filament\Tables;
-use Filament\Forms\Components\Actions\Action;
-use Filament\Tables\Actions\EditAction;
-use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Columns\ViewColumn;
 use Filament\Tables\Filters\Filter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
-use Filament\Forms\Components\Grid;
-use Filament\Forms\Components\ColorPicker;
 use Illuminate\Support\Facades\Auth;
 
-class ApplicationResource extends Resource
+class CustomAppResource extends Resource
 {
     use HasUserAccess;
 
     protected const DEFAULT_LANGUAGE_ID = 1;
 
     protected static ?string $model = Application::class;
-
-    protected static ?string $navigationIcon = 'heroicon-o-rectangle-stack';
     protected static ?string $navigationGroup = '推广';
-    protected static ?string $navigationLabel = '应用管理';
-    protected static ?int $navigationSort = 1;
-    protected static ?string $slug = 'appManage';
+    protected static ?string $navigationLabel = '自定义应用';
+    protected static ?int $navigationSort = 2;
+    protected static ?string $slug = 'customApp';
+    protected static ?string $navigationIcon = 'heroicon-o-rectangle-stack';
 
     public static function getEloquentQuery(): Builder
     {
         $query = parent::getEloquentQuery()
-            ->with(['languages', 'localeApplications.comments'])
-            ->where('app_type', Application::APP_TYPE_NORMAL);
+            ->where('app_type', Application::APP_TYPE_CUSTOM);
 
         // 应用用户数据权限过滤
         return applyUserDataScope($query);
     }
-
 
     public static function form(Form $form): Form
     {
         return $form
             ->schema([
                 Hidden::make('app_type')
-                    ->default(Application::APP_TYPE_NORMAL)
+                    ->default(Application::APP_TYPE_CUSTOM)
                     ->dehydrated(),
 
                 Section::make('基本信息')
@@ -199,10 +188,44 @@ class ApplicationResource extends Resource
                             ->searchable()
                             ->required()
                             ->reactive()
-                            ->columnSpanFull()
                             ->default(fn(?Application $record) => $record && $record->exists
                                 ? $record->languages()->pluck('id')->toArray()
                                 : [self::DEFAULT_LANGUAGE_ID])
+                            ->afterStateHydrated(function (callable $set, callable $get, $state, ?Application $record) {
+                                if ($record && $record->exists) {
+                                    return;
+                                }
+
+                                $currentLanguages = collect($state)->filter()->all();
+
+                                if (empty($currentLanguages)) {
+                                    $currentLanguages = [self::DEFAULT_LANGUAGE_ID];
+                                    $set('languages', $currentLanguages);
+                                }
+
+                                $localeApplications = $get('localeApplications') ?: [];
+                                foreach ($currentLanguages as $languageId) {
+                                    if (!isset($localeApplications[$languageId])) {
+                                        $localeApplications[$languageId] = [
+                                            'name' => '',
+                                            'manufacturer' => '',
+                                            'icon' => null,
+                                            'downloads' => null,
+                                            'age_limit' => null,
+                                            'comment_count' => null,
+                                            'introduction' => '',
+                                            'images' => [],
+                                            'install_button' => true,
+                                            'install_button_text' => '',
+                                            'install_button_color' => '',
+                                            'install_button_position' => ButtonPositionEnum::BOTTOM,
+                                        ];
+                                    }
+                                }
+
+                                $set('localeApplications', $localeApplications);
+                            })
+                            ->columnSpanFull()
                             ->afterStateUpdated(function (callable $set, callable $get, $state) {
                                 // 初始化每个语言的嵌套数据结构
                                 $localeApplications = $get('localeApplications') ?: [];
@@ -218,8 +241,6 @@ class ApplicationResource extends Resource
                                                 'comment_count' => null,
                                                 'introduction' => '',
                                                 'images' => [],
-                                                'label' => [],
-                                                'reviews' => [],
                                                 'install_button' => true,
                                                 'install_button_text' => '',
                                                 'install_button_color' => '',
@@ -281,51 +302,9 @@ class ApplicationResource extends Resource
                                                 ->imagePreviewHeight('180')
                                                 ->preserveFilenames(),
 
-                                            Grid::make(3)->schema([
-                                                Select::make("localeApplications.{$languageId}.downloads")
-                                                    ->label('下载数')
-                                                    ->options([
-                                                        '10 K+' => '10 K+',
-                                                        '20 K+' => '20 K+',
-                                                        '50 K+' => '50 K+',
-                                                        '100 K+' => '100 K+',
-                                                        '1 mi+' => '1 mi+',
-                                                        '2 mi+' => '2 mi+',
-                                                        '5 mi+' => '5 mi+',
-                                                        '10 mi+' => '10 mi+',
-                                                    ])
-                                                    ->required()
-                                                    ->placeholder('选择下载量级别')
-                                                    ->prefixIcon('heroicon-o-arrow-down-tray'),
-
-                                                Select::make("localeApplications.{$languageId}.age_limit")
-                                                    ->label('适用年龄')
-                                                    ->options([
-                                                        3 => '3岁以上',
-                                                        7 => '7岁以上',
-                                                        12 => '12岁以上',
-                                                        18 => '18岁以上',
-                                                    ])
-                                                    ->placeholder('暂不设置')
-                                                    ->prefixIcon('heroicon-o-user-group'),
-
-                                                TextInput::make("localeApplications.{$languageId}.comment_count")
-                                                    ->label('评论数')
-                                                    ->placeholder('输入评论数量')
-                                                    ->numeric()
-                                                    ->required()
-                                                    ->prefixIcon('heroicon-o-chat-bubble-left-right'),
-                                            ]),
-
-                                            Textarea::make("localeApplications.{$languageId}.introduction")
-                                                ->label('应用简介')
-                                                ->placeholder('输入应用的详细介绍，最多1000字')
-                                                ->rows(4)
-                                                ->maxLength(1000)
-                                                ->required(),
 
                                             FileUpload::make("localeApplications.{$languageId}.images")
-                                                ->label('应用截图')
+                                                ->label('自定义图片')
                                                 ->helperText('支持jpg/jpeg/webp/png格式,且不能超过500KB,最多只能上传5张')
                                                 ->image()
                                                 ->directory('pwa-cloak/applications/locale_images')
@@ -338,94 +317,31 @@ class ApplicationResource extends Resource
                                                 ->panelLayout('grid')
                                                 ->columnSpanFull(),
 
-                                            TagsInput::make("localeApplications.{$languageId}.label")
-                                                ->label('添加 APP 标签')
-                                                ->placeholder('输入标签后按 Enter 或 Tab 或逗号添加')
-                                                ->helperText('最多可添加 6 个标签，每个标签不超过 20 字符')
-                                                ->splitKeys(['Enter', 'Tab', ','])
-                                                ->required()
-                                                ->rules([
-                                                    'max:6',
-                                                    function () {
-                                                        return function (string $attribute, $value, $fail) {
-                                                            if (is_array($value)) {
-                                                                if (count($value) > 6) {
-                                                                    $fail('最多只能添加 6 个标签');
-                                                                }
-                                                                foreach ($value as $tag) {
-                                                                    if (mb_strlen($tag) > 20) {
-                                                                        $fail('每个标签不能超过 20 个字符');
-                                                                        break;
-                                                                    }
-                                                                }
-                                                            }
-                                                        };
-                                                    }
+                                            Toggle::make("localeApplications.{$languageId}.install_button")
+                                                ->label('启用安装键')
+                                                ->inline()
+                                                ->reactive()
+                                                ->default(true)
+                                                ->columnSpanFull(),
+
+                                            TextInput::make("localeApplications.{$languageId}.install_button_text")
+                                                ->label('安装键文案')
+                                                ->placeholder('请输入安装键文案')
+                                                ->maxLength(50)
+                                                ->visible(fn(Get $get) => (bool) $get("localeApplications.{$languageId}.install_button"))
+                                                ->columnSpanFull(),
+
+                                            Grid::make(2)
+                                                ->schema([
+                                                    ColorPicker::make("localeApplications.{$languageId}.install_button_color")
+                                                        ->label('安装键颜色'),
+                                                    Select::make("localeApplications.{$languageId}.install_button_position")
+                                                        ->label('安装键位置')
+                                                        ->options(ButtonPositionEnum::SELECT)
+                                                        ->default(ButtonPositionEnum::BOTTOM),
                                                 ])
-                                                ->columnSpanFull(),
-
-                                            Hidden::make("localeApplications.{$languageId}.comment_ids")
-                                                ->default([])
-                                                ->dehydrated()
-                                                ->rule(function () use ($language) {
-                                                    return function (string $attribute, $value, \Closure $fail) use ($language) {
-                                                        // 确保值是数组
-                                                        if (!is_array($value)) {
-                                                            $value = json_decode($value, true) ?? [];
-                                                        }
-
-                                                        // 检查数组元素数量
-                                                        if (count($value) < 2) {
-                                                            $languageName = $language ? $language->name : '当前语言';
-                                                            $fail("【{$languageName}】标签页需要至少选择2条评论");
-                                                        }
-                                                    };
-                                                }),
-
-                                            View::make('filament.forms.components.comment-library-wrapper')
-                                                ->viewData(function (Get $get, $record) use ($languageId) {
-                                                    // 获取评论：超级管理员可以看到所有评论，普通用户只能看到自己的
-                                                    $commentsQuery = \App\Models\Comment::query();
-                                                    if (!\isSuperAdmin()) {
-                                                        $commentsQuery->where('user_id', Auth::id());
-                                                    }
-                                                    $allComments = $commentsQuery
-                                                        ->with('language')
-                                                        ->orderBy('created_at', 'desc')
-                                                        ->get();
-
-                                                    // 获取所有语言
-                                                    $languages = Language::orderBy('id')->get();
-
-                                                    // 获取已选中的评论IDs
-                                                    $selectedIds = [];
-                                                    if ($record && $record->exists) {
-                                                        $localeApp = $record->localeApplications()
-                                                            ->where('language_id', $languageId)
-                                                            ->first();
-                                                        if ($localeApp) {
-                                                            $selectedIds = $localeApp->comments()
-                                                                ->pluck('comments.id')
-                                                                ->toArray();
-                                                        }
-                                                    } else {
-                                                        // 创建模式：从表单状态获取
-                                                        $localeApps = $get('localeApplications');
-                                                        if (isset($localeApps[$languageId]['comment_ids'])) {
-                                                            $selectedIds = $localeApps[$languageId]['comment_ids'];
-                                                        }
-                                                    }
-
-                                                    return [
-                                                        'statePath' => "localeApplications.{$languageId}.comment_ids",
-                                                        'languageId' => $languageId,
-                                                        'allComments' => $allComments,
-                                                        'languages' => $languages,
-                                                        'selectedIds' => $selectedIds,
-                                                    ];
-                                                })
-                                                ->columnSpanFull(),
-
+                                                ->columnSpanFull()
+                                                ->visible(fn(Get $get) => (bool) $get("localeApplications.{$languageId}.install_button")),
                                         ]);
                                 }
 
@@ -480,23 +396,6 @@ class ApplicationResource extends Resource
                                         ->reactive(),
                                 ])
                                 ->extraAttributes(['class' => 'border-0 shadow-none p-0']),
-
-                            // 第1行 - 右列
-                            Section::make('展示设置')
-                                ->description('控制页面元素显示')
-                                ->icon('heroicon-o-eye')
-                                ->compact()
-                                ->columnSpan(1)
-                                ->schema([
-                                    Toggle::make('ercode_show')
-                                        ->label('开启二维码显示')
-                                        ->helperText('在应用页面展示二维码')
-                                        ->inline()
-                                        ->default(true),
-                                ])
-                                ->extraAttributes(['class' => 'border-0 shadow-none p-0']),
-
-                            // 第2行 - 左列
                             Section::make('包模式')
                                 ->description('选择应用分发方式')
                                 ->icon('heroicon-o-cube')
@@ -530,7 +429,7 @@ class ApplicationResource extends Resource
                                         ->helperText('开启 iOS 设备兼容模式')
                                         ->inline()
                                         ->visible(fn($get) => !$get('package_priority') || $get('package_priority') !== 'W2A')
-                                        ->default(true),
+                                        ->default(false),
 
                                     Toggle::make('w2a_auto_down')
                                         ->label('W2A 自动下载')
@@ -550,34 +449,8 @@ class ApplicationResource extends Resource
                                     Toggle::make('is_iframe')
                                         ->label('允许 IFrame 嵌入')
                                         ->helperText('允许在其他网页中嵌入显示')
+                                        ->default(true)
                                         ->inline(),
-                                ])
-                                ->extraAttributes(['class' => 'border-0 shadow-none p-0']),
-
-                            // 第3行 - 右列
-                            Section::make('投诉设置')
-                                ->description('用户反馈与投诉管理')
-                                ->icon('heroicon-o-flag')
-                                ->compact()
-                                ->columnSpan(1)
-                                ->schema([
-                                    Toggle::make('complaint')
-                                        ->label('开启投诉入口')
-                                        ->helperText('有利于降低广告投诉、提升审核通过率')
-                                        ->inline()
-                                        ->reactive(),
-
-                                    CheckboxList::make('complaint_config')
-                                        ->label('可投诉状态')
-                                        ->helperText('选择用户可投诉的应用状态')
-                                        ->options([
-                                            1 => '已安装',
-                                            2 => '已启动',
-                                            3 => '未启动',
-                                            4 => '已卸载',
-                                        ])
-                                        ->columns(2)
-                                        ->visible(fn($get) => $get('complaint'))
                                 ])
                                 ->extraAttributes(['class' => 'border-0 shadow-none p-0']),
                         ]),
@@ -590,31 +463,16 @@ class ApplicationResource extends Resource
     {
         return $table
             ->columns([
-                // 整合的APP信息列（包含icon、name、appid、remark）
-                ViewColumn::make('app_info')
-                    ->label('APP信息')
-                    ->viewData(fn($record) => ['record' => $record])
-                    ->view('filament.tables.columns.app-info'),
-
-                // 包文件列（apk_upload_enabled=1 显示蓝色已上传）
-                TextColumn::make('apk_upload_enabled')
-                    ->label('包文件')
-                    ->badge()
-                    ->formatStateUsing(fn($state) => $state ? '已上传' : '未上传')
-                    ->color(fn($state) => $state ? 'success' : 'warning'),
-
-                // 模式展示列（package_priority）
-                TextColumn::make('package_priority')->label('模式'),
-
-                // iframe列（is_iframe 是/否）
-                TextColumn::make('is_iframe')
-                    ->label('iframe')
-                    ->formatStateUsing(fn($state) => $state ? '是' : '否'),
-
-                // 展示谷歌图标列（google_show 是/否）
-                TextColumn::make('google_show')
-                    ->label('展示谷歌图标')
-                    ->formatStateUsing(fn($state) => $state ? '是' : '否'),
+                // 卡片视图列
+                ViewColumn::make('card')
+                    ->view('filament.tables.custom-app-card')
+                    ->viewData(fn($record) => ['record' => $record]),
+            ])
+            ->contentGrid([
+                'md' => 4,
+                'xl' => 6,
+                '2xl' => 8,
+                'gap' => 12, // 控制卡片间距
             ])
             ->filters([
                 // APP名称筛选
@@ -632,106 +490,28 @@ class ApplicationResource extends Resource
                         );
                     }),
 
-                // APPID筛选
-                Filter::make('id')
-                    ->form([
-                        TextInput::make('id')
-                            ->label('APPID')
-                            ->inlineLabel()
-                            ->placeholder('请输入APPID')
-                            ->numeric(),
-                    ])
-                    ->query(function (Builder $query, array $data): Builder {
-                        return $query->when(
-                            $data['id'],
-                            fn(Builder $query, $id): Builder => $query->where('id', $id)
-                        );
-                    }),
-
-                // 状态筛选（是否上传安装包）
-                Filter::make('apk_upload_enabled')
-                    ->form([
-                        Select::make('apk_upload_enabled')
-                            ->label('状态')
-                            ->inlineLabel()
-                            ->options([
-                                '1' => '已上传',
-                                '0' => '未上传',
-                            ])
-                            ->placeholder('请选择状态'),
-                    ])
-                    ->query(function (Builder $query, array $data): Builder {
-                        return $query->when(
-                            $data['apk_upload_enabled'],
-                            fn(Builder $query, $status): Builder => $query->where('apk_upload_enabled', $status)
-                        );
-                    }),
-                Filter::make('is_delete')
-                    ->label('显示隐藏')
-                    ->form([
-                        Forms\Components\Toggle::make('is_delete')
-                            ->label('显示全部(含隐藏)')
-                            ->inline()
-                            ->default(false),
-                    ])
-                    ->query(function (Builder $query, array $data): Builder {
-                        if (!isset($data['is_delete']) || !$data['is_delete']) {
-                            // 如果开关未启用，只显示未删除的项目
-                            return $query->where('is_delete', false);
-                        }
-                        // 如果开关启用，显示所有项目（包括已删除的）
-                        return $query;
-                    })
-                    ->indicateUsing(function (array $data): array {
-                        $indicators = [];
-                        if ($data['is_delete'] ?? false) {
-                            $indicators[] = '包含隐藏项目';
-                        }
-                        return $indicators;
-                    }),
-
             ])
             ->filtersFormWidth('full')
             ->filtersLayout(Tables\Enums\FiltersLayout::AboveContent)
-            ->actions([
-                Tables\Actions\EditAction::make(),
-                // 添加隐藏操作
-                Tables\Actions\Action::make('toggleVisibility')
-                    ->label(fn($record) => $record->is_delete ? '显示' : '隐藏')
-                    ->icon(fn($record) => $record->is_delete ? 'heroicon-o-eye' : 'heroicon-o-eye-slash')
-                    ->color(fn($record) => $record->is_delete ? 'success' : 'warning')
-                    ->requiresConfirmation(fn($record) => !$record->is_delete) // 仅隐藏时需要确认
-                    ->modalHeading(fn($record) => $record->is_delete ? '' : '确认隐藏该APP？')
-                    ->modalDescription(fn($record) => $record->is_delete ? '' : '注意！隐藏后的APP将无法新建推广链接，但是不影响已创建的推广链接正常使用。')
-                    ->modalSubmitActionLabel(fn($record) => $record->is_delete ? '' : '隐藏')
-                    ->action(function ($record) {
-                        $record->is_delete = !$record->is_delete;
-                        $record->save();
-                        \Filament\Notifications\Notification::make()
-                            ->title('操作成功')
-                            ->body($record->is_delete ? '项目已隐藏' : '项目已显示')
-                            ->success()
-                            ->send();
-                    }),
-            ])
-            ->bulkActions([
-                //
-            ])
-            ->defaultSort('id', 'desc');
+            ->actions([]) // 卡片布局不需要表格操作，按钮已在卡片内
+            ->bulkActions([]) // 卡片布局不需要批量操作
+            ->defaultSort('id', 'desc')
+            ->paginated([10, 20, 50]); // 优化分页选项，适合卡片布局
     }
-
 
     public static function getRelations(): array
     {
-        return [];
+        return [
+            //
+        ];
     }
 
     public static function getPages(): array
     {
         return [
-            'index' => Pages\ListApplications::route('/'),
-            'create' => Pages\CreateApplication::route('/create'),
-            'edit' => Pages\EditApplication::route('/{record}/edit'),
+            'index' => Pages\ListCustomApps::route('/'),
+            'create' => Pages\CreateCustomApp::route('/create'),
+            'edit' => Pages\EditCustomApp::route('/{record}/edit'),
         ];
     }
 }

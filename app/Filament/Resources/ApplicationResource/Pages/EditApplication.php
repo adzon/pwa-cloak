@@ -8,29 +8,35 @@ use App\Models\Application;
 use App\Models\Comment;
 use Filament\Resources\Pages\EditRecord;
 use Filament\Notifications\Notification;
+use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\ValidationException;
 
 class EditApplication extends EditRecord
 {
     use ProtectsUserOwnership;
-    
+
     protected static string $resource = ApplicationResource::class;
-    
+
+    public function getHeading(): string|Htmlable
+    {
+        return '应用页面设计';
+    }
+
     protected function onValidationError(ValidationException $exception): void
     {
         parent::onValidationError($exception);
-        
+
         // 检查是否有评论相关的验证错误
         $errors = $exception->errors();
         $commentErrors = [];
-        
+
         foreach ($errors as $field => $messages) {
-            if (strpos($field, 'comment_ids') !== false) {
-                $commentErrors = array_merge($commentErrors, $messages);
+            if (strpos($field, 'comment_ids') !== false && is_array($messages)) {
+                array_push($commentErrors, ...$messages);
             }
         }
-        
+
         // 如果有评论验证错误，显示明显的通知
         if (!empty($commentErrors)) {
             Notification::make()
@@ -54,7 +60,7 @@ class EditApplication extends EditRecord
     {
         // 确保不会修改 user_id（保护原始创建者）
         unset($data['user_id']);
-        
+
         $record->update($data);
 
         // 保存语言关系
@@ -83,16 +89,16 @@ class EditApplication extends EditRecord
                 // 处理评论绑定
                 if (isset($localeData['comment_ids']) && !empty($localeData['comment_ids'])) {
                     $commentIds = $localeData['comment_ids'];
-                    
+
                     // 确保是数组格式
                     if (is_string($commentIds)) {
                         $commentIds = json_decode($commentIds, true);
                     }
-                    
+
                     // 过滤空值并转换为整数
                     if (is_array($commentIds)) {
                         $commentIds = array_filter(array_map('intval', $commentIds));
-                        
+
                         if (!empty($commentIds)) {
                             $localeApp->comments()->sync($commentIds);
                         } else {
@@ -172,7 +178,7 @@ class EditApplication extends EditRecord
 
         return $data;
     }
-    
+
     /**
      * 创建新评论
      */
@@ -184,63 +190,63 @@ class EditApplication extends EditRecord
             'content' => $data['content'],
             'language_id' => $data['language_id'],
         ]);
-        
+
         Notification::make()
             ->success()
             ->title('评论创建成功')
             ->send();
-        
+
         return $comment->id;
     }
-    
+
     /**
      * 更新评论
      */
     public function updateComment(int $commentId, array $data)
     {
         $query = Comment::where('id', $commentId);
-        
+
         // 超级管理员可以编辑所有评论，普通用户只能编辑自己的
         if (!\isSuperAdmin()) {
             $query->where('user_id', Auth::id());
         }
-        
+
         $comment = $query->first();
-        
+
         if ($comment) {
             // 保护原始创建者
             unset($data['user_id']);
-            
+
             $comment->update([
                 'nickname' => $data['nickname'],
                 'content' => $data['content'],
                 'language_id' => $data['language_id'],
             ]);
-            
+
             Notification::make()
                 ->success()
                 ->title('评论已更新')
                 ->send();
         }
     }
-    
+
     /**
      * 删除评论
      */
     public function deleteComment(int $commentId)
     {
         $query = Comment::where('id', $commentId);
-        
+
         // 超级管理员可以删除所有评论，普通用户只能删除自己的
         if (!\isSuperAdmin()) {
             $query->where('user_id', Auth::id());
         }
-        
+
         $comment = $query->first();
-        
+
         if ($comment) {
             $comment->delete();
-            
+
             Notification::make()
                 ->success()
                 ->title('评论已删除')

@@ -26,13 +26,21 @@ class LocaleApplication extends Model
         'introduction',
         'images',
         'label',
+        'install_button',
+        'install_button_text',
+        'install_button_color',
+        'install_button_position',
     ];
 
     protected $casts = [
+        'language_id' => 'integer',
+        'app_id' => 'integer',
         'age_limit' => 'integer',
         'comment_count' => 'integer',
         'images' => 'array',
         'label' => 'array',
+        'install_button' => 'integer',
+        'install_button_position' => 'integer',
     ];
 
     public function application(): BelongsTo
